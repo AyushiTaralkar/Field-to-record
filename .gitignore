@@ -1,0 +1,65 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Model weights and downloaded Hugging Face cache
+models/
+model/
+hf_cache/
+.cache/
+huggingface_cache/
+
+# PyTorch / ML artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+
+# Data - keep clinical data out of Git
+data/
+datasets/
+*.csv
+*.tsv
+*.jsonl
+
+# Generated outputs and recordings
+outputs/
+recordings/
+audio/
+transcripts/
+generated_notes/
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDEs and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
