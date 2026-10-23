@@ -36,6 +36,9 @@ datasets/
 *.csv
 *.tsv
 *.jsonl
+!data/
+data/*
+!data/.gitkeep
 
 # Generated outputs and recordings
 outputs/
