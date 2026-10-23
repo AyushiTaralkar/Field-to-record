@@ -1,0 +1,24 @@
+
+# Clinical NLP and medication NER
+torch
+transformers
+huggingface-hub
+tokenizers
+
+# Data validation and structured output
+pydantic
+
+# Audio input and offline speech-to-text
+faster-whisper
+soundfile
+
+# API and application layer
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Document generation
+Jinja2
+
+# Testing
+pytest
