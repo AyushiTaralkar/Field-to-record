@@ -1,0 +1,71 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Field-to-Record</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 850px;
+            margin: 50px auto;
+            padding: 0 20px;
+            color: #233446;
+            background: #f5f7fa;
+        }
+        .panel {
+            background: white;
+            padding: 28px;
+            border-radius: 12px;
+            border: 1px solid #dce3ea;
+        }
+        textarea {
+            width: 100%;
+            min-height: 180px;
+            padding: 12px;
+            box-sizing: border-box;
+            font: inherit;
+            border: 1px solid #b9c6d3;
+            border-radius: 8px;
+        }
+        button {
+            margin-top: 16px;
+            padding: 12px 20px;
+            background: #23415a;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            cursor: pointer;
+        }
+        .error { color: #b42318; }
+        .hint { color: #586b7d; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h1>Field-to-Record</h1>
+    <p>Voice-to-structured clinical documentation</p>
+
+    <div class="panel">
+        <h2>Responder note</h2>
+        <p class="hint">
+            Enter a synthetic or appropriately de-identified note.
+            Extracted information must be reviewed by a human.
+        </p>
+
+        {% if error %}
+            <p class="error">{{ error }}</p>
+        {% endif %}
+
+        <form action="/extract" method="post">
+            <textarea
+                name="note"
+                placeholder="Enter the responder's note here..."
+                required
+            >{{ note }}</textarea>
+
+            <button type="submit">Extract information</button>
+        </form>
+    </div>
+</body>
+</html>
