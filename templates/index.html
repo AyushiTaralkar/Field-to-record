@@ -4,298 +4,1029 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Field-to-Record</title>
-    <a href="/records">Previous Records</a>
+    <meta name="theme-color" content="#f5f9ff">
+    <title>Field-to-Record | Clinical Workspace</title>
 
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 850px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f5f7fa;
-            color: #233446;
+        :root {
+            --ink: #183653;
+            --muted: #73869c;
+            --blue: #397fda;
+            --royal: #4565d9;
+            --aqua: #75d9e7;
+            --line: rgba(119, 155, 190, 0.19);
+            --glass: rgba(255, 255, 255, 0.68);
         }
 
-        .panel {
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, -apple-system, BlinkMacSystemFont,
+                         "Segoe UI", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(ellipse at 8% 5%,
+                    rgba(255, 207, 224, 0.65), transparent 36%),
+                radial-gradient(ellipse at 88% 12%,
+                    rgba(123, 211, 245, 0.48), transparent 34%),
+                radial-gradient(ellipse at 50% 85%,
+                    rgba(167, 190, 255, 0.36), transparent 42%),
+                #f7faff;
+            background-attachment: fixed;
+        }
+
+        button, textarea, a {
+            font: inherit;
+        }
+
+        button:focus-visible,
+        a:focus-visible,
+        textarea:focus-visible {
+            outline: 3px solid rgba(57, 127, 218, 0.35);
+            outline-offset: 3px;
+        }
+
+        .app-shell {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 22px 5.5%;
+        }
+
+        /* Minimal top navigation */
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            width: 100%;
+            max-width: 1320px;
+            margin: 0 auto;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            color: var(--ink);
+            text-decoration: none;
+        }
+
+        .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 15px;
+            color: white;
+            background: linear-gradient(145deg, #77d8e6, #4878dd 72%);
+            box-shadow: 0 6px 20px rgba(73, 130, 211, 0.2);
+        }
+
+        .brand-name {
+            font-size: 16px;
+            font-weight: 720;
+            letter-spacing: -0.5px;
+        }
+
+        .brand-subtitle {
+            display: block;
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 10px;
+            letter-spacing: 1.4px;
+            font-weight: 650;
+        }
+
+        .nav-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 16px;
+            border: 1px solid rgba(255,255,255,0.85);
+            border-radius: 999px;
+            background: rgba(255,255,255,0.52);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            color: #41617e;
+            text-decoration: none;
+            font-size: 13px;
+            transition: background 0.2s, transform 0.2s;
+        }
+
+        .nav-link:hover {
+            background: rgba(255,255,255,0.9);
+            transform: translateY(-1px);
+        }
+
+        /* Central workspace */
+
+        .workspace {
+            width: 100%;
+            max-width: 760px;
+            margin: auto;
+            padding: 76px 0 65px;
+        }
+
+        .intro {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #527ca5;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.9px;
+            text-transform: uppercase;
+        }
+
+        .live-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #4bbda9;
+            box-shadow: 0 0 0 4px rgba(75,189,169,0.12);
+        }
+
+        h1 {
+            margin: 19px 0 12px;
+            font-size: clamp(32px, 5.2vw, 49px);
+            line-height: 1.12;
+            letter-spacing: -2px;
+            font-weight: 650;
+        }
+
+        h1 .gradient-text {
+            color: #4c7fcb;
+            background: linear-gradient(105deg, #429cc5, #5267d7 75%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .intro-copy {
+            max-width: 470px;
+            margin: 0 auto;
+            color: #74869b;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+
+        /* Subtle iridescent visual */
+
+        .orb-stage {
+            display: grid;
+            place-items: center;
+            height: 158px;
+            margin: 8px 0 23px;
+            position: relative;
+        }
+
+        .orb-halo {
+            position: absolute;
+            width: 190px;
+            height: 110px;
+            border-radius: 50%;
+            background: linear-gradient(
+                120deg,
+                rgba(255, 175, 213, 0.34),
+                rgba(103, 213, 238, 0.43),
+                rgba(126, 128, 245, 0.3)
+            );
+            filter: blur(34px);
+        }
+
+        .orb {
+            position: relative;
+            display: grid;
+            place-items: center;
+            width: 94px;
+            height: 94px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.9);
+            background:
+                radial-gradient(circle at 32% 25%,
+                    rgba(255,255,255,0.98), transparent 30%),
+                conic-gradient(
+                    from 20deg,
+                    #b7e8ff,
+                    #c6c8ff,
+                    #f5c9e6,
+                    #9ce4ed,
+                    #a6c7ff,
+                    #d9d7ff,
+                    #b7e8ff
+                );
+            box-shadow:
+                inset 0 0 18px rgba(255,255,255,0.9),
+                0 0 32px rgba(113, 166, 237, 0.27),
+                0 12px 36px rgba(97, 119, 204, 0.14);
+        }
+
+        .orb::before {
+            content: "";
+            position: absolute;
+            inset: 13px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.85);
+            background: radial-gradient(
+                circle at 35% 30%,
+                rgba(255,255,255,0.9),
+                rgba(255,255,255,0.14) 60%,
+                rgba(110,157,232,0.15)
+            );
+            box-shadow: inset 0 0 18px rgba(255,255,255,0.8);
+        }
+
+        .orb-core {
+            position: relative;
+            z-index: 1;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
             background: white;
-            padding: 24px;
-            border: 1px solid #dce3ea;
-            border-radius: 10px;
-            margin-bottom: 20px;
+            box-shadow: 0 0 18px 7px rgba(255,255,255,0.75);
+        }
+
+        /* Frosted glass note composer */
+
+        .composer {
+            position: relative;
+            padding: 19px;
+            border: 1px solid rgba(255,255,255,0.94);
+            border-radius: 25px;
+            background: var(--glass);
+            backdrop-filter: blur(26px);
+            -webkit-backdrop-filter: blur(26px);
+            box-shadow:
+                0 20px 65px rgba(60, 105, 157, 0.09),
+                inset 0 1px 0 rgba(255,255,255,0.95);
+        }
+
+        .composer-label {
+            display: block;
+            margin: 0 0 12px 2px;
+            color: #496884;
+            font-size: 12px;
+            font-weight: 650;
         }
 
         textarea {
+            display: block;
             width: 100%;
-            min-height: 180px;
-            box-sizing: border-box;
-            padding: 12px;
-            border: 1px solid #b9c6d3;
-            border-radius: 6px;
-            font: inherit;
+            min-height: 135px;
+            padding: 16px;
             resize: vertical;
+            border: 1px solid rgba(139, 169, 199, 0.22);
+            border-radius: 17px;
+            background: rgba(255,255,255,0.63);
+            color: #243f5b;
+            font-size: 14px;
+            line-height: 1.8;
+            transition: border-color 0.2s, background 0.2s;
         }
 
-        button {
-            padding: 12px 18px;
-            margin: 8px 8px 0 0;
-            background: #23415a;
-            color: white;
-            border: none;
-            border-radius: 7px;
+        textarea::placeholder {
+            color: #9aabba;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: rgba(72, 132, 216, 0.55);
+            background: rgba(255,255,255,0.9);
+        }
+
+        .composer-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .composer-tools {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .tool-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 39px;
+            padding: 9px 13px;
+            border: 1px solid rgba(137, 164, 194, 0.2);
+            border-radius: 999px;
+            background: rgba(255,255,255,0.62);
+            color: #52708b;
             cursor: pointer;
-            font: inherit;
+            font-size: 12px;
+            transition: 0.2s ease;
         }
 
-        button:disabled {
+        .tool-button:hover:not(:disabled) {
+            background: white;
+            border-color: rgba(80, 132, 202, 0.4);
+        }
+
+        .tool-button:disabled {
+            opacity: 0.48;
+            cursor: not-allowed;
+        }
+
+        .generate-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            min-height: 44px;
+            padding: 12px 19px;
+            border: 0;
+            border-radius: 999px;
+            background: linear-gradient(115deg, #3e99c7, #4c65d9);
+            box-shadow: 0 6px 18px rgba(67, 117, 209, 0.23);
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 650;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .generate-button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 9px 22px rgba(67, 117, 209, 0.3);
+        }
+
+        .generate-button:disabled {
             opacity: 0.55;
             cursor: not-allowed;
         }
 
-        .error {
-            color: #a32222;
-            font-weight: bold;
+        .helper {
+            margin: 13px 3px 0;
+            color: #8193a6;
+            font-size: 11px;
+            line-height: 1.7;
         }
 
-        .notice {
-            color: #586b7d;
+        .error {
+            margin: 0 0 15px;
+            padding: 12px 14px;
+            border: 1px solid rgba(191, 70, 85, 0.17);
+            border-radius: 12px;
+            background: rgba(255, 235, 238, 0.8);
+            color: #a52f46;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        /* Voice panel */
+
+        .voice-panel {
+            display: none;
+            margin-top: 16px;
+            padding: 19px;
+            border: 1px solid rgba(255,255,255,0.9);
+            border-radius: 21px;
+            background: rgba(255,255,255,0.56);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
+            box-shadow: 0 12px 35px rgba(60,105,157,0.06);
+        }
+
+        .voice-panel.visible {
+            display: block;
+            animation: rise-in 0.25s ease-out;
+        }
+
+        .voice-heading {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .mic-mark {
+            display: grid;
+            place-items: center;
+            flex: 0 0 42px;
+            height: 42px;
+            border: 1px solid rgba(255,255,255,0.9);
+            border-radius: 15px;
+            background: linear-gradient(145deg, #d4f6f8, #dce6ff);
+            color: #3e76c4;
+        }
+
+        .voice-title {
+            font-size: 13px;
+            font-weight: 680;
+        }
+
+        .voice-subtitle {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 11px;
             line-height: 1.5;
+        }
+
+        .voice-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 9px;
+            margin-top: 17px;
+        }
+
+        .stop-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 39px;
+            padding: 10px 14px;
+            border: 1px solid rgba(196, 82, 99, 0.17);
+            border-radius: 999px;
+            background: rgba(255,239,241,0.8);
+            color: #b34457;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .stop-button:disabled {
+            opacity: 0.48;
+            cursor: not-allowed;
         }
 
         .status {
-            margin-top: 12px;
-            line-height: 1.5;
+            margin: 13px 0 0;
+            color: #6c8298;
+            font-size: 12px;
+            line-height: 1.7;
         }
 
-        .divider {
-            border: 0;
-            border-top: 1px solid #dce3ea;
-            margin: 24px 0;
+        .status.recording {
+            color: #b34457;
+        }
+
+        .status.recording::before {
+            content: "";
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            margin-right: 8px;
+            border-radius: 50%;
+            background: #e35e70;
+            animation: pulse 1.2s infinite;
+        }
+
+        /* Small trust note and footer */
+
+        .trust-note {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 7px;
+            max-width: 570px;
+            margin: 24px auto 0;
+            color: #8191a3;
+            font-size: 11px;
+            line-height: 1.7;
+            text-align: center;
+        }
+
+        .trust-note svg {
+            flex: 0 0 auto;
+            margin-top: 2px;
+        }
+
+        .footer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding-top: 24px;
+            color: #9aa8b7;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            text-align: center;
+        }
+
+        .footer-dot {
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            background: #9aa8b7;
+        }
+
+        @keyframes pulse {
+            50% { opacity: 0.35; }
+        }
+
+        @keyframes rise-in {
+            from {
+                opacity: 0;
+                transform: translateY(7px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .app-shell {
+                padding: 15px 17px 20px;
+            }
+
+            .brand-mark {
+                width: 38px;
+                height: 38px;
+                border-radius: 13px;
+            }
+
+            .brand-name {
+                font-size: 14px;
+            }
+
+            .brand-subtitle {
+                font-size: 8px;
+                letter-spacing: 1px;
+            }
+
+            .nav-link {
+                padding: 10px 12px;
+                font-size: 11px;
+            }
+
+            .workspace {
+                padding: 52px 0 35px;
+            }
+
+            h1 {
+                letter-spacing: -1.4px;
+            }
+
+            .intro-copy {
+                max-width: 330px;
+                font-size: 13px;
+            }
+
+            .orb-stage {
+                height: 124px;
+                margin: 3px 0 15px;
+            }
+
+            .orb {
+                width: 79px;
+                height: 79px;
+            }
+
+            .composer {
+                padding: 13px;
+                border-radius: 21px;
+            }
+
+            textarea {
+                min-height: 145px;
+                padding: 13px;
+                font-size: 14px;
+            }
+
+            .composer-footer {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .composer-tools {
+                justify-content: space-between;
+            }
+
+            .generate-button {
+                width: 100%;
+                min-height: 46px;
+            }
+
+            .helper {
+                font-size: 10px;
+            }
+
+            .trust-note {
+                font-size: 10px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
 
 <body>
-    <h1>Field-to-Record</h1>
-    <p>Voice-to-Structured Clinical Note Generator</p>
+<div class="app-shell">
 
-    <div class="panel">
-        <h2>Enter responder note</h2>
+    <header class="topbar">
+        <a class="brand" href="/" aria-label="Field-to-Record home">
+            <span class="brand-mark" aria-hidden="true">
+                <svg width="23" height="23" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="1.8"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12h4l3-7 4 14 3-7h4"/>
+                </svg>
+            </span>
+            <span>
+                <span class="brand-name">Field-to-Record</span>
+                <span class="brand-subtitle">CLINICAL DOCUMENTATION</span>
+            </span>
+        </a>
 
-        <p class="notice">
-            Use synthetic or appropriately de-identified notes.
-            Always check the transcript and extracted information.
-        </p>
+        <a class="nav-link" href="/records">
+            <svg width="16" height="16" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+                <path d="M8 6h13M8 12h13M8 18h13"/>
+                <path d="M3 6h.01M3 12h.01M3 18h.01"/>
+            </svg>
+            Previous records
+        </a>
+    </header>
 
-        {% if error %}
-        <p class="error">{{ error }}</p>
-        {% endif %}
+    <main class="workspace">
+        <section class="intro">
+            <div class="eyebrow">
+                <span class="live-dot"></span>
+                Your clinical workspace
+            </div>
 
-        <form action="/extract" method="post" id="noteForm">
-            <label for="note"><strong>Responder note</strong></label>
+            <h1>
+                Let's document<br>
+                <span class="gradient-text">what happened.</span>
+            </h1>
 
-            <textarea
-                id="note"
-                name="note"
-                placeholder="Type a responder note or transcribe a recording..."
-                required
-            >{{ note }}</textarea>
-
-            <p class="notice">
-                If using voice input, correct any transcription mistakes
-                in the text above before generating the draft.
-            </p>
-
-            <button type="submit" id="generateButton">
-                Generate Draft for Review
-            </button>
-        </form>
-
-        <hr class="divider">
-
-        <section>
-            <h2>Voice Input</h2>
-
-            <p class="notice">
-                Record directly through your browser. Audio is transcribed
-                by your local faster-whisper model.
-            </p>
-
-            <button type="button" id="startRecording">
-                Start Recording
-            </button>
-
-            <button type="button" id="stopRecording" disabled>
-                Stop Recording &amp; Transcribe
-            </button>
-
-            <p id="recordingStatus" class="status" role="status"
-               aria-live="polite">
-                Ready to record.
+            <p class="intro-copy">
+                Turn responder notes into structured clinical records.
+                Start with your words. Review every detail before saving.
             </p>
         </section>
-    </div>
 
-    <script>
-        const noteField = document.getElementById("note");
-        const startButton = document.getElementById("startRecording");
-        const stopButton = document.getElementById("stopRecording");
-        const statusText = document.getElementById("recordingStatus");
-        const generateButton = document.getElementById("generateButton");
+        <div class="orb-stage" aria-hidden="true">
+            <div class="orb-halo"></div>
+            <div class="orb">
+                <div class="orb-core"></div>
+            </div>
+        </div>
 
-        let mediaRecorder = null;
-        let audioChunks = [];
-        let audioStream = null;
-        let recordingMimeType = "";
+        <section class="composer" aria-labelledby="composerHeading">
+            <span class="composer-label" id="composerHeading">
+                New clinical record
+            </span>
 
-        startButton.addEventListener("click", async () => {
-            try {
-                if (!navigator.mediaDevices?.getUserMedia ||
-                    typeof MediaRecorder === "undefined") {
-                    throw new Error(
-                        "Your browser does not support microphone recording."
-                    );
-                }
+            {% if error %}
+            <div class="error" role="alert">{{ error }}</div>
+            {% endif %}
 
-                audioStream = await navigator.mediaDevices.getUserMedia({
-                    audio: true
-                });
+            <form action="/extract" method="post" id="noteForm">
+                <label for="note" class="composer-label">
+                    Responder note
+                </label>
 
-                audioChunks = [];
+                <textarea
+                    id="note"
+                    name="note"
+                    placeholder="Describe what the responder observed, administered, or performed..."
+                    required
+                >{{ note or "" }}</textarea>
 
-                const supportedTypes = [
-                    "audio/webm;codecs=opus",
-                    "audio/webm",
-                    "audio/mp4"
-                ];
+                <div class="composer-footer">
+                    <div class="composer-tools">
+                        <button
+                            class="tool-button"
+                            type="button"
+                            id="toggleVoice"
+                            aria-expanded="false"
+                            aria-controls="voicePanel"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24"
+                                 fill="none" stroke="currentColor"
+                                 stroke-width="1.8" stroke-linecap="round"
+                                 stroke-linejoin="round" aria-hidden="true">
+                                <rect x="9" y="3" width="6" height="12"
+                                      rx="3"/>
+                                <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>
+                            </svg>
+                            Voice input
+                        </button>
 
-                recordingMimeType = supportedTypes.find(
-                    type => MediaRecorder.isTypeSupported(type)
-                ) || "";
+                        <span class="tool-button" aria-label="Editable text input">
+                            <svg width="15" height="15" viewBox="0 0 24 24"
+                                 fill="none" stroke="currentColor"
+                                 stroke-width="1.8" stroke-linecap="round"
+                                 stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 20h9"/>
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"/>
+                            </svg>
+                            Editable note
+                        </span>
+                    </div>
 
-                mediaRecorder = recordingMimeType
-                    ? new MediaRecorder(audioStream, {
-                        mimeType: recordingMimeType
-                    })
-                    : new MediaRecorder(audioStream);
+                    <button
+                        class="generate-button"
+                        type="submit"
+                        id="generateButton"
+                    >
+                        Generate draft
+                        <svg width="16" height="16" viewBox="0 0 24 24"
+                             fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round" aria-hidden="true">
+                            <path d="M5 12h14M13 6l6 6-6 6"/>
+                        </svg>
+                    </button>
+                </div>
+            </form>
 
-                recordingMimeType = mediaRecorder.mimeType;
+            <p class="helper">
+                Review the transcript and extracted details before approving
+                a record. The app does not validate clinical decisions.
+            </p>
+        </section>
 
-                mediaRecorder.ondataavailable = event => {
-                    if (event.data && event.data.size > 0) {
-                        audioChunks.push(event.data);
-                    }
-                };
+        <section class="voice-panel" id="voicePanel"
+                 aria-labelledby="voiceHeading">
+            <div class="voice-heading">
+                <div class="mic-mark" aria-hidden="true">
+                    <svg width="21" height="21" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="1.8"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="3" width="6" height="12" rx="3"/>
+                        <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>
+                    </svg>
+                </div>
 
-                mediaRecorder.onerror = () => {
-                    statusText.textContent =
-                        "Recording failed. Please try again.";
-                    cleanupRecording();
-                };
+                <div>
+                    <div class="voice-title" id="voiceHeading">
+                        Voice capture
+                    </div>
+                    <div class="voice-subtitle">
+                        Record a note, then check the transcript before extraction.
+                    </div>
+                </div>
+            </div>
 
-                mediaRecorder.onstop = transcribeRecording;
+            <div class="voice-controls">
+                <button class="tool-button" type="button" id="startRecording">
+                    <span aria-hidden="true">●</span>
+                    Start recording
+                </button>
 
-                mediaRecorder.start();
+                <button class="stop-button" type="button"
+                        id="stopRecording" disabled>
+                    Stop & transcribe
+                </button>
+            </div>
 
-                startButton.disabled = true;
-                stopButton.disabled = false;
-                generateButton.disabled = true;
+            <p id="recordingStatus" class="status"
+               role="status" aria-live="polite">
+                Ready when you are.
+            </p>
+        </section>
 
-                statusText.textContent =
-                    "Recording... Speak clearly, then stop when finished.";
+        <p class="trust-note">
+            <svg width="14" height="14" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="1.7"
+                 stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+                <rect x="4" y="10" width="16" height="11" rx="2"/>
+                <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+            </svg>
+            Use synthetic or appropriately de-identified notes.
+            Always review and correct the record before approval.
+        </p>
 
-            } catch (error) {
-                statusText.textContent =
-                    error.message ||
-                    "Could not access the microphone. Check browser permissions.";
+        <footer class="footer">
+            <span>FIELD-TO-RECORD</span>
+            <span class="footer-dot"></span>
+            <span>CAPTURE · REVIEW · RECORD</span>
+        </footer>
+    </main>
+</div>
 
-                cleanupRecording();
-            }
-        });
+<script>
+    const noteField = document.getElementById("note");
+    const startButton = document.getElementById("startRecording");
+    const stopButton = document.getElementById("stopRecording");
+    const statusText = document.getElementById("recordingStatus");
+    const generateButton = document.getElementById("generateButton");
+    const toggleVoice = document.getElementById("toggleVoice");
+    const voicePanel = document.getElementById("voicePanel");
+    const noteForm = document.getElementById("noteForm");
 
-        stopButton.addEventListener("click", () => {
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                stopButton.disabled = true;
-                statusText.textContent = "Preparing audio...";
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let audioStream = null;
+    let recordingMimeType = "";
 
-                mediaRecorder.stop();
-            }
-        });
+    let isRecording = false;
+    let isTranscribing = false;
 
-        async function transcribeRecording() {
-            try {
-                const audioBlob = new Blob(audioChunks, {
-                    type: recordingMimeType || "application/octet-stream"
-                });
+    toggleVoice.addEventListener("click", () => {
+        const isOpen = voicePanel.classList.toggle("visible");
+        toggleVoice.setAttribute("aria-expanded", String(isOpen));
 
-                if (!audioBlob.size) {
-                    throw new Error(
-                        "No audio was recorded. Please try again."
-                    );
-                }
+        if (isOpen) {
+            voicePanel.scrollIntoView({
+                behavior: "smooth",
+                block: "nearest"
+            });
+        }
+    });
 
-                const formData = new FormData();
+    noteForm.addEventListener("submit", event => {
+        if (isRecording || isTranscribing) {
+            event.preventDefault();
+            statusText.textContent =
+                "Please finish transcription before generating the draft.";
+        }
+    });
 
-                const extension = recordingMimeType.includes("mp4")
-                    ? "mp4"
-                    : recordingMimeType.includes("webm")
-                        ? "webm"
-                        : "audio";
+    startButton.addEventListener("click", async () => {
+        if (isRecording || isTranscribing) return;
 
-                formData.append(
-                    "file",
-                    audioBlob,
-                    `recording.${extension}`
+        try {
+            if (!navigator.mediaDevices?.getUserMedia ||
+                typeof MediaRecorder === "undefined") {
+                throw new Error(
+                    "This browser does not support microphone recording."
                 );
+            }
 
-                statusText.textContent =
-                    "Transcribing locally. This may take a little while...";
+            statusText.textContent = "Requesting microphone access...";
 
-                const response = await fetch("/transcribe", {
-                    method: "POST",
-                    body: formData
-                });
+            audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: true
+            });
 
-                const result = await response.json();
+            audioChunks = [];
 
-                if (!response.ok) {
-                    throw new Error(
-                        result.detail || "Transcription failed."
-                    );
+            const supportedTypes = [
+                "audio/webm;codecs=opus",
+                "audio/webm",
+                "audio/mp4"
+            ];
+
+            recordingMimeType = supportedTypes.find(
+                type => MediaRecorder.isTypeSupported(type)
+            ) || "";
+
+            mediaRecorder = recordingMimeType
+                ? new MediaRecorder(audioStream, {
+                    mimeType: recordingMimeType
+                })
+                : new MediaRecorder(audioStream);
+
+            recordingMimeType = mediaRecorder.mimeType;
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data && event.data.size > 0) {
+                    audioChunks.push(event.data);
                 }
+            };
 
-                if (!result.transcript ||
-                    !result.transcript.trim()) {
-                    throw new Error(
-                        "No speech detected. Please record again."
-                    );
-                }
-
-                noteField.value = result.transcript.trim();
-
+            mediaRecorder.onerror = () => {
                 statusText.textContent =
-                    "Transcription complete. Correct the text above before generating a draft.";
-
-                noteField.focus();
-
-            } catch (error) {
-                statusText.textContent = error.message;
-            } finally {
+                    "Recording failed. Please try again.";
                 cleanupRecording();
-            }
+            };
+
+            mediaRecorder.onstop = transcribeRecording;
+            mediaRecorder.start();
+
+            isRecording = true;
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            generateButton.disabled = true;
+
+            statusText.classList.add("recording");
+            statusText.textContent =
+                "Recording in progress. Speak clearly, then stop when finished.";
+
+        } catch (error) {
+            statusText.textContent =
+                error.message ||
+                "Could not access the microphone. Check browser permissions.";
+
+            cleanupRecording();
         }
+    });
 
-        function cleanupRecording() {
-            if (audioStream) {
-                audioStream.getTracks().forEach(track => track.stop());
-            }
-
-            audioStream = null;
-            mediaRecorder = null;
-            startButton.disabled = false;
+    stopButton.addEventListener("click", () => {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
             stopButton.disabled = true;
-            generateButton.disabled = false;
+            statusText.classList.remove("recording");
+            statusText.textContent = "Preparing your recording...";
+            mediaRecorder.stop();
         }
-    </script>
+    });
+
+    async function transcribeRecording() {
+        isRecording = false;
+        isTranscribing = true;
+        generateButton.disabled = true;
+        startButton.disabled = true;
+        stopButton.disabled = true;
+
+        try {
+            const audioBlob = new Blob(audioChunks, {
+                type: recordingMimeType || "application/octet-stream"
+            });
+
+            if (!audioBlob.size) {
+                throw new Error(
+                    "No audio was recorded. Please try again."
+                );
+            }
+
+            const formData = new FormData();
+
+            const extension = recordingMimeType.includes("mp4")
+                ? "mp4"
+                : recordingMimeType.includes("webm")
+                    ? "webm"
+                    : "audio";
+
+            formData.append(
+                "file",
+                audioBlob,
+                `recording.${extension}`
+            );
+
+            statusText.textContent =
+                "Transcribing with your local speech model...";
+
+            const response = await fetch("/transcribe", {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.detail || "Transcription failed."
+                );
+            }
+
+            if (!result.transcript ||
+                !result.transcript.trim()) {
+                throw new Error(
+                    "No speech detected. Please record again."
+                );
+            }
+
+            noteField.value = result.transcript.trim();
+
+            statusText.textContent =
+                "Transcription complete. Review and correct your note above.";
+
+            noteField.focus();
+
+        } catch (error) {
+            statusText.textContent =
+                error.message || "Transcription failed. Please try again.";
+        } finally {
+            isTranscribing = false;
+            cleanupRecording();
+        }
+    }
+
+    function cleanupRecording() {
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+        }
+
+        audioStream = null;
+        mediaRecorder = null;
+        isRecording = false;
+
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        generateButton.disabled = isTranscribing;
+
+        statusText.classList.remove("recording");
+    }
+</script>
 </body>
 </html>

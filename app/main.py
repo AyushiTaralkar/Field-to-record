@@ -1,20 +1,22 @@
 
 from datetime import datetime
+import logging
 import os
 import tempfile
+from io import BytesIO
+from xml.sax.saxutils import escape
 
-from fastapi import FastAPI, Form, Request, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import (
+    FastAPI,
+    Form,
+    Request,
+    UploadFile,
+    File,
+    HTTPException,
+)
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from app.database import init_db, save_record, get_record, list_records
-from app.audit import init_audit_table, log_event
-from app.structure import structure_record
-from app.speech import transcribe_audio
-
-from io import BytesIO
-
-from fastapi.responses import StreamingResponse
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
@@ -27,13 +29,72 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.database import (
+    init_db,
+    save_record,
+    get_record,
+    list_records,
+)
+from app.audit import init_audit_table, log_event
+from app.structure import structure_record
+from app.speech import transcribe_audio
+
+
 app = FastAPI(title="Field-to-Record")
 templates = Jinja2Templates(directory="templates")
+
+
+# -------------------- Helpers --------------------
+
+def display_value(value):
+    """Convert stored values and NER entities into readable text."""
+    if value is None or value == "":
+        return "Not recorded"
+
+    if isinstance(value, dict):
+        for key in ("text", "value", "name", "medication_name"):
+            item = value.get(key)
+            if item is not None and item != "":
+                return display_value(item)
+        return "Not recorded"
+
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            rendered = display_value(item)
+            if rendered != "Not recorded" and rendered not in parts:
+                parts.append(rendered)
+        return ", ".join(parts) if parts else "Not recorded"
+
+    return str(value)
+
+
+def format_timestamp(value):
+    """Format stored ISO timestamps for people reading the record."""
+    if not value:
+        return "Not recorded"
+
+    try:
+        timestamp = datetime.fromisoformat(str(value))
+        return timestamp.strftime("%d %b %Y, %I:%M:%S %p IST")
+    except (ValueError, TypeError):
+        return str(value)
+
+
+def safe_text(value):
+    """Escape text before placing it inside a ReportLab paragraph."""
+    return escape(display_value(value))
+
+
+def add_pdf_paragraph(story, text, style):
+    story.append(Paragraph(safe_text(text), style))
+
+
+# -------------------- History --------------------
 
 @app.get("/records", response_class=HTMLResponse)
 def previous_records(request: Request):
     records = list_records()
-
     return templates.TemplateResponse(
         request=request,
         name="history.html",
@@ -55,32 +116,26 @@ def view_previous_record(request: Request, record_id: str):
     )
 
 
-
+# -------------------- Speech-to-Text --------------------
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
-    allowed_types = {
-        "audio/webm",
-        "audio/wav",
-        "audio/x-wav",
-        "audio/mpeg",
-        "audio/mp4",
-        "audio/ogg",
-    }
-
     content_type = (file.content_type or "").lower()
 
     if not content_type.startswith("audio/"):
-      raise HTTPException(
-        status_code=400,
-        detail=f"Unsupported audio format: {content_type or 'unknown'}"
-    )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported audio format: {content_type or 'unknown'}",
+        )
+
     temp_path = None
 
     try:
-        suffix = ".webm"
+        suffix = os.path.splitext(file.filename or "")[1] or ".webm"
+
         with tempfile.NamedTemporaryFile(
-            delete=False, suffix=suffix
+            delete=False,
+            suffix=suffix,
         ) as temp:
             temp_path = temp.name
             content = await file.read()
@@ -89,7 +144,7 @@ async def transcribe(file: UploadFile = File(...)):
         if not content:
             raise HTTPException(
                 status_code=400,
-                detail="The audio recording is empty."
+                detail="The audio recording is empty.",
             )
 
         transcript = transcribe_audio(temp_path)
@@ -97,10 +152,11 @@ async def transcribe(file: UploadFile = File(...)):
 
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception:
+        logging.exception("Transcription failed")
         raise HTTPException(
             status_code=500,
-            detail=f"Transcription failed: {exc}"
+            detail="Transcription failed. Check the server terminal for details.",
         )
     finally:
         if temp_path and os.path.exists(temp_path):
@@ -108,11 +164,15 @@ async def transcribe(file: UploadFile = File(...)):
         await file.close()
 
 
+# -------------------- Startup --------------------
+
 @app.on_event("startup")
 def startup():
     init_db()
     init_audit_table()
 
+
+# -------------------- Home --------------------
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
@@ -122,6 +182,8 @@ def home(request: Request):
         context={"error": None, "note": ""},
     )
 
+
+# -------------------- Extract Record --------------------
 
 @app.post("/extract", response_class=HTMLResponse)
 def extract_note(request: Request, note: str = Form(...)):
@@ -160,10 +222,7 @@ def extract_note(request: Request, note: str = Form(...)):
         )
 
     except Exception:
-        # Print the actual exception in the server terminal for debugging.
-        import logging
         logging.exception("Failed to extract responder note")
-
         return templates.TemplateResponse(
             request=request,
             name="index.html",
@@ -178,12 +237,14 @@ def extract_note(request: Request, note: str = Form(...)):
         )
 
 
+# -------------------- Human Review --------------------
+
 @app.post("/review/{record_id}", response_class=HTMLResponse)
 async def review_record(request: Request, record_id: str):
     record = get_record(record_id)
 
     if record is None:
-        return HTMLResponse("Record not found.", status_code=404)
+        raise HTTPException(status_code=404, detail="Record not found")
 
     if record.get("status") != "draft":
         return templates.TemplateResponse(
@@ -225,7 +286,9 @@ async def review_record(request: Request, record_id: str):
                 status_code=400,
             )
 
+        # Keep the field name consistent with the PDF generator.
         medication["medication_name"] = name
+
         attributes = medication.setdefault("attributes", {})
 
         for field_name, attr_type in (
@@ -237,16 +300,15 @@ async def review_record(request: Request, record_id: str):
             if value:
                 items = attributes.setdefault(attr_type, [])
 
-                if items:
-                    # Update the first displayed value.
+                if items and isinstance(items[0], dict):
                     items[0]["text"] = value
                 else:
-                    items.append({
+                    items[:] = [{
                         "text": value,
                         "score": None,
                         "start": None,
                         "end": None,
-                    })
+                    }]
             else:
                 attributes.pop(attr_type, None)
 
@@ -274,15 +336,8 @@ async def review_record(request: Request, record_id: str):
         context={"record": record, "error": None},
     )
 
-from xml.sax.saxutils import escape
 
-
-def safe_text(value):
-    """Escape text before placing it inside a PDF paragraph."""
-    if value is None or value == "":
-        return "Not stated"
-    return escape(str(value))
-
+# -------------------- PDF Export --------------------
 
 @app.get("/records/{record_id}/pdf")
 def export_record_pdf(record_id: str):
@@ -311,18 +366,27 @@ def export_record_pdf(record_id: str):
     styles = getSampleStyleSheet()
     story = []
 
-    story.append(Paragraph("Field-to-Record", styles["Title"]))
-    story.append(Paragraph("Clinical Record", styles["Heading2"]))
+    add_pdf_paragraph(story, "Field-to-Record", styles["Title"])
+    add_pdf_paragraph(story, "Clinical Record", styles["Heading2"])
     story.append(Spacer(1, 12))
 
-    story.append(Paragraph("Record Information", styles["Heading2"]))
+    add_pdf_paragraph(story, "Record Information", styles["Heading2"])
 
     info = [
-        ["Record ID", safe_text(record.get("id") or record.get("record_id") or record_id)],
-        ["Status", safe_text(record.get("status"))],
-        ["Created", safe_text(record.get("created_at"))],
-        ["Reviewed", safe_text(record.get("reviewed_at"))],
-        ["Finalized", safe_text(record.get("finalized_at"))],
+        [
+            "Record ID",
+            display_value(record.get("record_id") or record_id),
+        ],
+        ["Status", display_value(record.get("status"))],
+        [
+            "Created",
+            format_timestamp(
+                record.get("record_created_at")
+                or record.get("created_at")
+            ),
+        ],
+        ["Reviewed", format_timestamp(record.get("reviewed_at"))],
+        ["Finalized", format_timestamp(record.get("finalized_at"))],
     ]
 
     table = Table(info, colWidths=[4 * cm, 12 * cm])
@@ -332,87 +396,132 @@ def export_record_pdf(record_id: str):
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("PADDING", (0, 0), (-1, -1), 7),
     ]))
+
     story.append(table)
     story.append(Spacer(1, 14))
 
-    story.append(Paragraph("Original Responder Note", styles["Heading2"]))
-    story.append(Paragraph(
-        safe_text(record.get("original_note")),
+    add_pdf_paragraph(story, "Original Responder Note", styles["Heading2"])
+    add_pdf_paragraph(
+        story,
+        record.get("original_note") or record.get("note"),
         styles["BodyText"],
-    ))
+    )
     story.append(Spacer(1, 14))
 
-    story.append(Paragraph("Medications", styles["Heading2"]))
-
+    # Medications
+    add_pdf_paragraph(story, "Medications", styles["Heading2"])
     medications = record.get("medications") or []
 
     if medications:
         for med in medications:
-            story.append(Paragraph(
-                safe_text(med.get("name", "Medication")),
-                styles["Heading3"],
-            ))
+            if not isinstance(med, dict):
+                add_pdf_paragraph(story, med, styles["Heading3"])
+                continue
 
-            story.append(Paragraph(
-                f"Event time: {safe_text(med.get('event_time'))}",
+            name = (
+                med.get("medication_name")
+                or med.get("name")
+                or med.get("drug")
+                or med.get("medication")
+                or med.get("text")
+                or "Medication name not extracted"
+            )
+
+            add_pdf_paragraph(story, name, styles["Heading3"])
+            add_pdf_paragraph(
+                story,
+                f"Event time: {display_value(med.get('event_time'))}",
                 styles["BodyText"],
-            ))
+            )
 
             attributes = med.get("attributes") or {}
 
             if isinstance(attributes, dict):
                 for key, value in attributes.items():
-                    story.append(Paragraph(
-                        f"{safe_text(key)}: {safe_text(value)}",
+                    label = str(key).replace("_", " ").title()
+                    add_pdf_paragraph(
+                        story,
+                        f"{label}: {display_value(value)}",
                         styles["BodyText"],
-                    ))
+                    )
+
             elif isinstance(attributes, list):
                 for attribute in attributes:
                     if isinstance(attribute, dict):
-                        key = attribute.get("type", attribute.get("label", "Attribute"))
-                        value = attribute.get("value", "")
-                        story.append(Paragraph(
-                            f"{safe_text(key)}: {safe_text(value)}",
+                        key = (
+                            attribute.get("type")
+                            or attribute.get("label")
+                            or attribute.get("name")
+                            or "Attribute"
+                        )
+                        value = (
+                            attribute.get("value")
+                            if attribute.get("value") is not None
+                            else attribute.get("text")
+                        )
+                        label = str(key).replace("_", " ").title()
+                        add_pdf_paragraph(
+                            story,
+                            f"{label}: {display_value(value)}",
                             styles["BodyText"],
-                        ))
+                        )
                     else:
-                        story.append(Paragraph(
-                            safe_text(attribute), styles["BodyText"]
-                        ))
+                        add_pdf_paragraph(
+                            story,
+                            attribute,
+                            styles["BodyText"],
+                        )
 
             story.append(Spacer(1, 8))
     else:
-        story.append(Paragraph("No medications recorded.", styles["BodyText"]))
+        add_pdf_paragraph(
+            story,
+            "No medications recorded.",
+            styles["BodyText"],
+        )
 
+    # Procedures
     story.append(Spacer(1, 8))
-    story.append(Paragraph("Procedures", styles["Heading2"]))
+    add_pdf_paragraph(story, "Procedures", styles["Heading2"])
 
     procedures = record.get("procedures") or []
 
     if procedures:
         for procedure in procedures:
             if isinstance(procedure, dict):
-                name = procedure.get("name", procedure.get("text", "Procedure"))
-                story.append(Paragraph(safe_text(name), styles["BodyText"]))
+                name = (
+                    procedure.get("name")
+                    or procedure.get("text")
+                    or "Procedure"
+                )
             else:
-                story.append(Paragraph(safe_text(procedure), styles["BodyText"]))
+                name = procedure
+
+            add_pdf_paragraph(story, name, styles["BodyText"])
     else:
-        story.append(Paragraph("No procedures recorded.", styles["BodyText"]))
+        add_pdf_paragraph(
+            story,
+            "No procedures recorded.",
+            styles["BodyText"],
+        )
 
     story.append(Spacer(1, 18))
-    story.append(Paragraph(
+    add_pdf_paragraph(
+        story,
         "Generated by Field-to-Record. This document reflects the saved "
         "record and is not an independent clinical validation.",
         styles["Italic"],
-    ))
+    )
 
     pdf.build(story)
     buffer.seek(0)
+
+    filename = f"clinical_record_{record_id}.pdf"
 
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="clinical_record_{record_id}.pdf"'
+            "Content-Disposition": f'attachment; filename="{filename}"'
         },
     )
