@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review Clinical Record</title>
+    <title>Review Clinical Record | Field-to-Record</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -35,75 +35,168 @@
             border-radius: 6px;
             font: inherit;
         }
-        button {
+        input[type="checkbox"] {
+            width: auto;
+            margin-right: 8px;
+        }
+        button, .link {
+            display: inline-block;
             padding: 12px 18px;
+            margin-top: 16px;
             background: #23415a;
             color: white;
             border: none;
             border-radius: 7px;
             cursor: pointer;
-            margin-top: 16px;
+            font: inherit;
+            text-decoration: none;
         }
         pre {
             white-space: pre-wrap;
             overflow-wrap: anywhere;
         }
-        .notice { color: #586b7d; }
+        .notice {
+            color: #586b7d;
+            line-height: 1.5;
+        }
+        .error {
+            color: #a32222;
+            font-weight: bold;
+        }
+        .status {
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <h1>Review Clinical Record</h1>
 
     <div class="panel">
-        <p><strong>Record ID:</strong> {{ record.record_id }}</p>
-        <p><strong>Status:</strong> {{ record.status }}</p>
+        <p>
+            <strong>Record ID:</strong>
+            {{ record.record_id }}
+        </p>
+        <p>
+            <strong>Status:</strong>
+            <span class="status">{{ record.status }}</span>
+        </p>
 
         <h2>Original responder note</h2>
         <pre>{{ record.original_note }}</pre>
 
         <p class="notice">
-            Compare every field with the original note.
-            Do not infer missing clinical information.
+            Compare each extracted field against the original note.
+            Correct errors, and do not infer missing clinical information.
         </p>
     </div>
 
+    {% if error %}
+    <div class="panel">
+        <p class="error">{{ error }}</p>
+    </div>
+    {% endif %}
+
+    {% if record.status == "draft" %}
     <form action="/review/{{ record.record_id }}" method="post">
         {% for medication in record.medications %}
+        {% set med_index = loop.index0 %}
+
         <div class="panel">
             <h2>Medication {{ loop.index }}</h2>
 
-            <label for="name_{{ loop.index0 }}">Medication name</label>
+            <label for="name_{{ med_index }}">Medication name</label>
             <input
-                id="name_{{ loop.index0 }}"
-                name="name_{{ loop.index0 }}"
+                id="name_{{ med_index }}"
+                name="name_{{ med_index }}"
                 value="{{ medication.medication_name or '' }}"
                 required
             >
 
-            {% for attr_type, items in medication.attributes.items() %}
-                {% for item in items %}
-                <label for="attr_{{ loop.index0 }}_{{ loop.index }}_{{ loop.index0 }}">
-                    {{ attr_type.replace('_', ' ').title() }}
-                </label>
-                <input
-                    name="attr_{{ loop.parent.index0 if loop.parent is defined else 0 }}_{{ attr_type }}"
-                    value="{{ item.text }}"
-                >
-                {% endfor %}
-            {% endfor %}
+            <label for="strength_{{ med_index }}">Strength</label>
+            <input
+                id="strength_{{ med_index }}"
+                name="strength_{{ med_index }}"
+                value="{{ medication.attributes.get('STRENGTH', [{}])[0].get('text', '') }}"
+            >
+
+            <label for="route_{{ med_index }}">Route</label>
+            <input
+                id="route_{{ med_index }}"
+                name="route_{{ med_index }}"
+                value="{{ medication.attributes.get('ROUTE', [{}])[0].get('text', '') }}"
+            >
         </div>
         {% endfor %}
 
         <div class="panel">
             <h2>Unassigned entities</h2>
-            <pre>{{ record.unassigned_entities }}</pre>
+            {% if record.unassigned_entities %}
+                <ul>
+                {% for entity in record.unassigned_entities %}
+                    <li>
+                        {{ entity.get('label', 'Entity') }}:
+                        {{ entity.get('text', '') }}
+                    </li>
+                {% endfor %}
+                </ul>
+            {% else %}
+                <p>None</p>
+            {% endif %}
+
             <p class="notice">
-                These are displayed for review; they are not automatically
-                assigned to a medication.
+                These entities have not been assigned to a medication.
+                Check them against the original note.
             </p>
         </div>
 
-        <button type="submit">Confirm and save review</button>
+        <div class="panel">
+            <label>
+                <input
+                    type="checkbox"
+                    name="confirmed"
+                    value="yes"
+                    required
+                >
+                I have reviewed and confirmed the displayed fields
+                against the original responder note.
+            </label>
+
+            <button type="submit">Confirm and save review</button>
+        </div>
     </form>
+
+    {% else %}
+    <div class="panel">
+        <h2>Reviewed medication details</h2>
+
+        {% if record.medications %}
+            {% for medication in record.medications %}
+            <div>
+                <h3>Medication {{ loop.index }}</h3>
+                <p>
+                    <strong>Name:</strong>
+                    {{ medication.medication_name }}
+                </p>
+
+                {% for attr_type in ['STRENGTH', 'ROUTE'] %}
+                    {% for item in medication.attributes.get(attr_type, []) %}
+                    <p>
+                        <strong>{{ attr_type.replace('_', ' ').title() }}:</strong>
+                        {{ item.get('text', '') }}
+                    </p>
+                    {% endfor %}
+                {% endfor %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p>No medication entities were extracted.</p>
+        {% endif %}
+
+        <p class="notice">
+            This record is reviewed, not finalized or exported.
+        </p>
+        <a class="link" href="/">Create another draft</a>
+    </div>
+    {% endif %}
 </body>
 </html>

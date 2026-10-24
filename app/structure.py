@@ -1,148 +1,204 @@
 
 from datetime import datetime
 from uuid import uuid4
-import re
 
 from app.ner import extract_entities
 
 
-STRENGTH_PATTERN = re.compile(
-    r"\d+(?:\.\d+)?\s*"
-    r"(?:mg|mcg|μg|ug|g|kg|ml|l|units?|iu|mmol|meq)\b",
-    re.IGNORECASE,
-)
+def _entity_text(entity):
+    """Return the extracted entity text."""
+    return str(entity.get("text", "")).strip()
 
 
-def current_timestamp() -> str:
-    """Return the current local time with timezone information."""
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+def _entity_type(entity):
+    """Read the entity label returned by the NER model."""
+    return str(
+        entity.get("type")
+        or entity.get("entity")
+        or entity.get("entity_group")
+        or entity.get("label")
+        or ""
+    ).upper().replace("B-", "").replace("I-", "")
 
 
-def merge_fragmented_strengths(entities: list, text: str) -> list:
-    """Merge adjacent STRENGTH fragments only when they form a valid dose."""
+def _entity_start(entity):
+    return entity.get("start")
+
+
+def _entity_end(entity):
+    return entity.get("end")
+
+
+def _normalise_label(label):
+    """Map common medication entity labels to our record schema."""
+    aliases = {
+        "DRUG": "DRUG_NAME",
+        "MEDICATION": "DRUG_NAME",
+        "MEDICATION_NAME": "DRUG_NAME",
+        "DOSAGE": "STRENGTH",
+        "DOSE": "STRENGTH",
+        "DRUG_STRENGTH": "STRENGTH",
+        "DRUG_ROUTE": "ROUTE",
+        "ADMINISTRATION_ROUTE": "ROUTE",
+    }
+
+    return aliases.get(label, label)
+
+
+def _merge_adjacent_entities(entities):
+    """
+    Merge adjacent fragments with the same label.
+
+    Example:
+        '2' + '.' + '5 mg' -> '2.5 mg'
+
+    Character offsets are retained for traceability.
+    """
+    ordered = sorted(
+        entities,
+        key=lambda item: (
+            item.get("start") is None,
+            item.get("start") or 0,
+        ),
+    )
+
     merged = []
-    index = 0
 
-    while index < len(entities):
-        entity = entities[index]
+    for entity in ordered:
+        current = dict(entity)
+        text = _entity_text(current)
 
-        if entity["type"] != "STRENGTH":
-            merged.append(entity)
-            index += 1
+        if not text:
             continue
 
-        # Collect consecutive strength fragments separated by at most
-        # a dot or whitespace. This handles outputs such as 2, ., 5 mg.
-        group = [entity]
-        end = entity["end"]
-        next_index = index + 1
+        current["text"] = text
 
-        while next_index < len(entities):
-            candidate = entities[next_index]
+        if merged:
+            previous = merged[-1]
+            previous_end = _entity_end(previous)
+            current_start = _entity_start(current)
 
-            if candidate["type"] != "STRENGTH":
-                break
+            same_label = (
+                _entity_type(previous) == _entity_type(current)
+            )
 
-            gap = text[end:candidate["start"]]
+            adjacent = (
+                previous_end is not None
+                and current_start is not None
+                and 0 <= current_start - previous_end <= 2
+            )
 
-            if len(gap) > 1 or any(
-                char not in ". \t" for char in gap
-            ):
-                break
+            if same_label and adjacent:
+                previous_text = _entity_text(previous)
 
-            group.append(candidate)
-            end = candidate["end"]
-            next_index += 1
+                if text in {".", ","}:
+                    # Punctuation attaches directly to the preceding text.
+                    previous["text"] = previous_text + text
+                elif previous_text.endswith((".", ",")):
+                    # The next fragment attaches directly after punctuation.
+                    previous["text"] = previous_text + text
+                else:
+                    previous["text"] = previous_text + " " + text
 
-        combined_text = text[group[0]["start"]:group[-1]["end"]]
+                previous["end"] = _entity_end(current)
+                continue
 
-        if (
-            len(group) > 1
-            and STRENGTH_PATTERN.fullmatch(combined_text.strip())
-        ):
-            merged.append({
-                "text": combined_text,
-                "type": "STRENGTH",
-                "score": min(item["score"] for item in group),
-                "start": group[0]["start"],
-                "end": group[-1]["end"],
-            })
-            index = next_index
-        else:
-            merged.append(entity)
-            index += 1
+        merged.append(current)
 
     return merged
 
 
-def sentence_boundary_between(
-    text: str, previous_end: int, current_start: int
-) -> bool:
-    """Detect a likely sentence boundary between two extracted entities."""
-    gap = text[previous_end:current_start]
+def structure_record(note):
+    """
+    Convert a responder note into a structured draft record.
 
-    return bool(re.search(r"[.!?]\s+[A-Z]", gap))
+    This function records extracted information only. It does not
+    recommend treatments or validate medication safety.
+    """
+    note = note.strip()
 
+    if not note:
+        raise ValueError("The responder note cannot be empty.")
 
-def structure_record(text: str) -> dict:
-    """Convert a clinical note into a structured draft for human review."""
+    raw_entities = extract_entities(note)
 
-    if not isinstance(text, str) or not text.strip():
-        raise ValueError("Clinical note cannot be empty.")
+    if not isinstance(raw_entities, list):
+        raise TypeError(
+            "extract_entities(note) must return a list of dictionaries."
+        )
 
-    entities = extract_entities(text)
-    entities.sort(key=lambda entity: entity["start"])
-    entities = merge_fragmented_strengths(entities, text)
+    entities = _merge_adjacent_entities(raw_entities)
 
     medications = []
     unassigned_entities = []
     current_medication = None
-    previous_entity_end = None
+
+    attribute_labels = {
+        "STRENGTH",
+        "ROUTE",
+        "FORM",
+        "FREQUENCY",
+        "DURATION",
+        "REASON",
+    }
 
     for entity in entities:
-        entity_type = entity["type"]
+        text = _entity_text(entity)
+        raw_label = _entity_type(entity)
+        label = _normalise_label(raw_label)
 
-        if entity_type == "DRUG_NAME":
+        if not text or not label:
+            continue
+
+        if label == "DRUG_NAME":
             current_medication = {
-                "medication_name": entity["text"],
+                "medication_name": text,
                 "attributes": {},
                 "source_span": {
-                    "start": entity["start"],
-                    "end": entity["end"],
+                    "start": _entity_start(entity),
+                    "end": _entity_end(entity),
                 },
                 "event_timestamp": None,
                 "timestamp_source": "unknown",
             }
+
             medications.append(current_medication)
-            previous_entity_end = entity["end"]
             continue
 
-        # Do not attach an entity from a later sentence to the
-        # previous medication automatically.
-        if current_medication is not None and previous_entity_end is not None:
-            if sentence_boundary_between(
-                text, previous_entity_end, entity["start"]
-            ):
-                unassigned_entities.append(entity)
+        if label in attribute_labels:
+            if current_medication is None:
+                unassigned_entities.append({
+                    "label": label,
+                    "text": text,
+                    "start": _entity_start(entity),
+                    "end": _entity_end(entity),
+                })
                 continue
 
-        if current_medication is not None:
             current_medication["attributes"].setdefault(
-                entity_type, []
+                label, []
             ).append({
-                "text": entity["text"],
-                "score": entity["score"],
-                "start": entity["start"],
-                "end": entity["end"],
+                "text": text,
+                "score": entity.get("score"),
+                "start": _entity_start(entity),
+                "end": _entity_end(entity),
             })
-            previous_entity_end = entity["end"]
-        else:
-            unassigned_entities.append(entity)
+
+            continue
+
+        unassigned_entities.append({
+            "label": label,
+            "text": text,
+            "start": _entity_start(entity),
+            "end": _entity_end(entity),
+        })
 
     return {
         "record_id": str(uuid4()),
-        "original_note": text,
-        "record_created_at": current_timestamp(),
+        "original_note": note,
+        "record_created_at": datetime.now()
+        .astimezone()
+        .isoformat(timespec="seconds"),
         "medications": medications,
         "unassigned_entities": unassigned_entities,
         "procedures": [],
@@ -151,17 +207,3 @@ def structure_record(text: str) -> dict:
         "finalized_at": None,
         "exported_at": None,
     }
-
-
-if __name__ == "__main__":
-    import json
-
-    sample_note = (
-        "Responder reports that at 10:35 AM, the patient was given "
-        "Aspirin 300 mg orally. Oxygen was administered by face mask. "
-        "The responder also reports that the patient received "
-        "Salbutamol 2.5 mg by nebulizer."
-    )
-
-    draft = structure_record(sample_note)
-    print(json.dumps(draft, indent=2, ensure_ascii=False))

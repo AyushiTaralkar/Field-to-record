@@ -9,62 +9,73 @@
         body {
             font-family: Arial, sans-serif;
             max-width: 850px;
-            margin: 50px auto;
-            padding: 0 20px;
-            color: #233446;
+            margin: 40px auto;
+            padding: 20px;
             background: #f5f7fa;
+            color: #233446;
         }
         .panel {
             background: white;
-            padding: 28px;
-            border-radius: 12px;
+            padding: 24px;
             border: 1px solid #dce3ea;
+            border-radius: 10px;
+            margin-bottom: 20px;
         }
         textarea {
             width: 100%;
             min-height: 180px;
-            padding: 12px;
             box-sizing: border-box;
-            font: inherit;
+            padding: 12px;
             border: 1px solid #b9c6d3;
-            border-radius: 8px;
+            border-radius: 6px;
+            font: inherit;
+            resize: vertical;
         }
         button {
+            padding: 12px 18px;
             margin-top: 16px;
-            padding: 12px 20px;
             background: #23415a;
             color: white;
             border: none;
             border-radius: 7px;
             cursor: pointer;
+            font: inherit;
         }
-        .error { color: #b42318; }
-        .hint { color: #586b7d; font-size: 14px; }
+        .error {
+            color: #a32222;
+            font-weight: bold;
+        }
+        .notice {
+            color: #586b7d;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
     <h1>Field-to-Record</h1>
-    <p>Voice-to-structured clinical documentation</p>
+    <p>Voice-to-Structured Clinical Note Generator</p>
 
     <div class="panel">
-        <h2>Responder note</h2>
-        <p class="hint">
+        <h2>Enter responder note</h2>
+        <p class="notice">
             Enter a synthetic or appropriately de-identified note.
-            Extracted information must be reviewed by a human.
+            Extracted information must be checked by a clinician.
         </p>
 
         {% if error %}
-            <p class="error">{{ error }}</p>
+        <p class="error">{{ error }}</p>
         {% endif %}
 
         <form action="/extract" method="post">
+            <label for="note"><strong>Responder note</strong></label>
             <textarea
+                id="note"
                 name="note"
                 placeholder="Enter the responder's note here..."
                 required
             >{{ note }}</textarea>
 
-            <button type="submit">Extract information</button>
+            <button type="submit">Extract and review</button>
         </form>
     </div>
 </body>
