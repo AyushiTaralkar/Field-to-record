@@ -6,8 +6,16 @@ from datetime import datetime
 from app.ner import extract_entities
 
 
+ADMINISTRATION_VERBS = re.compile(
+    r"\b(administered|given|received|injected|applied|provided)\b",
+    re.IGNORECASE,
+)
+
+SENTENCE_ENDINGS = ".!?"
+
+
 def merge_adjacent_entities(entities):
-    """Merge consecutive entities that share the same label."""
+    """Merge overlapping entities with the same label."""
     if not entities:
         return []
 
@@ -25,12 +33,14 @@ def merge_adjacent_entities(entities):
 
             if (
                 current["type"] == previous["type"]
-                and current["start"] <= previous["end"] + 1
+                and current["start"] <= previous["end"]
             ):
-                previous["end"] = max(previous["end"], current["end"])
-                previous["text"] = (
-                    previous["text"] + current["text"]
-                )
+                if current["end"] > previous["end"]:
+                    previous["text"] += current["text"][
+                        previous["end"] - current["start"]:
+                    ]
+                    previous["end"] = current["end"]
+
                 previous["score"] = min(
                     previous.get("score", 1.0),
                     current.get("score", 1.0),
@@ -43,16 +53,13 @@ def merge_adjacent_entities(entities):
 
 
 def extract_event_times(note):
-    """
-    Extract simple clock times from the original note.
-    These are text-derived times, not independently verified times.
-    """
+    """Extract explicitly mentioned clock times and their source offsets."""
     pattern = re.compile(
-        r"\b(?:"
+        r"(?<!\w)(?:"
         r"\d{1,2}:\d{2}\s*(?:AM|PM)?"
         r"|"
         r"\d{1,2}\s*(?:AM|PM)"
-        r")\b",
+        r")(?!\w)",
         re.IGNORECASE,
     )
 
@@ -66,19 +73,112 @@ def extract_event_times(note):
     ]
 
 
+def get_sentence_bounds(note, position):
+    """Return the sentence boundaries around a character position."""
+    start = 0
+    end = len(note)
+
+    for index in range(position - 1, -1, -1):
+        if note[index] in SENTENCE_ENDINGS:
+            start = index + 1
+            break
+
+    for index in range(position, len(note)):
+        if note[index] in SENTENCE_ENDINGS:
+            end = index + 1
+            break
+
+    # Trim whitespace without changing the original note offsets.
+    while start < end and note[start].isspace():
+        start += 1
+
+    while end > start and note[end - 1].isspace():
+        end -= 1
+
+    return start, end
+
+
+def get_medication_event_time(note, drug, next_drug_start, event_times):
+    """
+    Associate a timestamp only when the note provides a reasonable
+    sentence-level link to the medication.
+
+    This is a heuristic, not a guarantee of clinical event attribution.
+    """
+    sentence_start, sentence_end = get_sentence_bounds(
+        note, drug["start"]
+    )
+
+    sentence_times = [
+        event_time
+        for event_time in event_times
+        if sentence_start <= event_time["start"]
+        and event_time["end"] <= sentence_end
+    ]
+
+    if not sentence_times:
+        return None
+
+    # A time after the medication name in the same sentence is explicit
+    # local context, e.g. "Paracetamol was given at 10:30 AM."
+    following_times = [
+        event_time
+        for event_time in sentence_times
+        if event_time["start"] >= drug["end"]
+    ]
+
+    if following_times:
+        return following_times[0]["text"]
+
+    # A time before the medication may apply to it when the same sentence
+    # describes an administration event, e.g. "At 10:30 AM, paracetamol
+    # was administered."
+    preceding_times = [
+        event_time
+        for event_time in sentence_times
+        if event_time["end"] <= drug["start"]
+    ]
+
+    if preceding_times:
+        sentence = note[sentence_start:sentence_end]
+
+        if ADMINISTRATION_VERBS.search(sentence):
+            return preceding_times[-1]["text"]
+
+    return None
+
+
 def structure_record(note):
-    """Convert a responder note into a structured draft record."""
-    entities = merge_adjacent_entities(extract_entities(note))
+    """Convert a responder note into a structured draft for human review."""
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError("Clinical note cannot be empty.")
+
     event_times = extract_event_times(note)
+    entities = merge_adjacent_entities(extract_entities(note))
+
+    # Remove NER entities overlapping detected clock times. This prevents
+    # fragments such as "30 AM" from becoming medication attributes.
+    entities = [
+        entity
+        for entity in entities
+        if not any(
+            entity["start"] < event_time["end"]
+            and entity["end"] > event_time["start"]
+            for event_time in event_times
+        )
+    ]
 
     medications = []
     unassigned_entities = []
     procedures = []
 
     medication_entities = [
-        entity for entity in entities
+        entity
+        for entity in entities
         if entity["type"] == "DRUG_NAME"
     ]
+
+    assigned_spans = set()
 
     for medication_index, drug in enumerate(medication_entities):
         next_drug_start = (
@@ -87,32 +187,28 @@ def structure_record(note):
             else len(note)
         )
 
-        # Associate extracted attributes occurring after this drug
-        # and before the next drug mention.
         attributes = {}
 
         for entity in entities:
-            if (
-                entity["type"] != "DRUG_NAME"
-                and drug["end"] <= entity["start"] < next_drug_start
-            ):
+            if entity["type"] in ("DRUG_NAME", "PROCEDURE"):
+                continue
+
+            # Preserve the current simple association rule: attributes
+            # after this drug and before the next drug mention.
+            if drug["end"] <= entity["start"] < next_drug_start:
                 attributes.setdefault(entity["type"], []).append({
                     "text": entity["text"].strip(),
                     "score": entity.get("score"),
                     "start": entity["start"],
                     "end": entity["end"],
                 })
+                assigned_spans.add((entity["start"], entity["end"]))
 
-        # Associate the nearest preceding time in the text, if any.
-        preceding_times = [
-            event_time for event_time in event_times
-            if event_time["end"] <= drug["start"]
-        ]
-
-        event_timestamp = (
-            preceding_times[-1]["text"]
-            if preceding_times
-            else None
+        event_timestamp = get_medication_event_time(
+            note,
+            drug,
+            next_drug_start,
+            event_times,
         )
 
         medications.append({
@@ -125,13 +221,19 @@ def structure_record(note):
             "event_timestamp": event_timestamp,
             "timestamp_source": (
                 "extracted_from_note"
-                if event_timestamp
+                if event_timestamp is not None
                 else "unknown"
             ),
         })
 
     for entity in entities:
-        if entity["type"] == "PROCEDURE":
+        entity_type = entity["type"]
+        span = (entity["start"], entity["end"])
+
+        if entity_type == "DRUG_NAME":
+            continue
+
+        if entity_type == "PROCEDURE":
             procedures.append({
                 "procedure_name": entity["text"].strip(),
                 "source_span": {
@@ -139,10 +241,12 @@ def structure_record(note):
                     "end": entity["end"],
                 },
             })
-        elif entity["type"] != "DRUG_NAME":
+            continue
+
+        if span not in assigned_spans:
             unassigned_entities.append({
                 "text": entity["text"].strip(),
-                "type": entity["type"],
+                "type": entity_type,
                 "score": entity.get("score"),
                 "start": entity["start"],
                 "end": entity["end"],
