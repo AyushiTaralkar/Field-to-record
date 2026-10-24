@@ -1,106 +1,40 @@
 
+import re
+import uuid
 from datetime import datetime
-from uuid import uuid4
 
 from app.ner import extract_entities
 
 
-def _entity_text(entity):
-    """Return the extracted entity text."""
-    return str(entity.get("text", "")).strip()
+def merge_adjacent_entities(entities):
+    """Merge consecutive entities that share the same label."""
+    if not entities:
+        return []
 
-
-def _entity_type(entity):
-    """Read the entity label returned by the NER model."""
-    return str(
-        entity.get("type")
-        or entity.get("entity")
-        or entity.get("entity_group")
-        or entity.get("label")
-        or ""
-    ).upper().replace("B-", "").replace("I-", "")
-
-
-def _entity_start(entity):
-    return entity.get("start")
-
-
-def _entity_end(entity):
-    return entity.get("end")
-
-
-def _normalise_label(label):
-    """Map common medication entity labels to our record schema."""
-    aliases = {
-        "DRUG": "DRUG_NAME",
-        "MEDICATION": "DRUG_NAME",
-        "MEDICATION_NAME": "DRUG_NAME",
-        "DOSAGE": "STRENGTH",
-        "DOSE": "STRENGTH",
-        "DRUG_STRENGTH": "STRENGTH",
-        "DRUG_ROUTE": "ROUTE",
-        "ADMINISTRATION_ROUTE": "ROUTE",
-    }
-
-    return aliases.get(label, label)
-
-
-def _merge_adjacent_entities(entities):
-    """
-    Merge adjacent fragments with the same label.
-
-    Example:
-        '2' + '.' + '5 mg' -> '2.5 mg'
-
-    Character offsets are retained for traceability.
-    """
-    ordered = sorted(
-        entities,
-        key=lambda item: (
-            item.get("start") is None,
-            item.get("start") or 0,
-        ),
-    )
-
+    entities = sorted(entities, key=lambda item: item["start"])
     merged = []
 
-    for entity in ordered:
-        current = dict(entity)
-        text = _entity_text(current)
-
-        if not text:
-            continue
-
-        current["text"] = text
+    for entity in entities:
+        current = {
+            **entity,
+            "type": entity.get("type", entity.get("label", "UNKNOWN")),
+        }
 
         if merged:
             previous = merged[-1]
-            previous_end = _entity_end(previous)
-            current_start = _entity_start(current)
 
-            same_label = (
-                _entity_type(previous) == _entity_type(current)
-            )
-
-            adjacent = (
-                previous_end is not None
-                and current_start is not None
-                and 0 <= current_start - previous_end <= 2
-            )
-
-            if same_label and adjacent:
-                previous_text = _entity_text(previous)
-
-                if text in {".", ","}:
-                    # Punctuation attaches directly to the preceding text.
-                    previous["text"] = previous_text + text
-                elif previous_text.endswith((".", ",")):
-                    # The next fragment attaches directly after punctuation.
-                    previous["text"] = previous_text + text
-                else:
-                    previous["text"] = previous_text + " " + text
-
-                previous["end"] = _entity_end(current)
+            if (
+                current["type"] == previous["type"]
+                and current["start"] <= previous["end"] + 1
+            ):
+                previous["end"] = max(previous["end"], current["end"])
+                previous["text"] = (
+                    previous["text"] + current["text"]
+                )
+                previous["score"] = min(
+                    previous.get("score", 1.0),
+                    current.get("score", 1.0),
+                )
                 continue
 
         merged.append(current)
@@ -108,100 +42,121 @@ def _merge_adjacent_entities(entities):
     return merged
 
 
+def extract_event_times(note):
+    """
+    Extract simple clock times from the original note.
+    These are text-derived times, not independently verified times.
+    """
+    pattern = re.compile(
+        r"\b(?:"
+        r"\d{1,2}:\d{2}\s*(?:AM|PM)?"
+        r"|"
+        r"\d{1,2}\s*(?:AM|PM)"
+        r")\b",
+        re.IGNORECASE,
+    )
+
+    return [
+        {
+            "text": match.group(0).strip(),
+            "start": match.start(),
+            "end": match.end(),
+        }
+        for match in pattern.finditer(note)
+    ]
+
+
 def structure_record(note):
-    """
-    Convert a responder note into a structured draft record.
-
-    This function records extracted information only. It does not
-    recommend treatments or validate medication safety.
-    """
-    note = note.strip()
-
-    if not note:
-        raise ValueError("The responder note cannot be empty.")
-
-    raw_entities = extract_entities(note)
-
-    if not isinstance(raw_entities, list):
-        raise TypeError(
-            "extract_entities(note) must return a list of dictionaries."
-        )
-
-    entities = _merge_adjacent_entities(raw_entities)
+    """Convert a responder note into a structured draft record."""
+    entities = merge_adjacent_entities(extract_entities(note))
+    event_times = extract_event_times(note)
 
     medications = []
     unassigned_entities = []
-    current_medication = None
+    procedures = []
 
-    attribute_labels = {
-        "STRENGTH",
-        "ROUTE",
-        "FORM",
-        "FREQUENCY",
-        "DURATION",
-        "REASON",
-    }
+    medication_entities = [
+        entity for entity in entities
+        if entity["type"] == "DRUG_NAME"
+    ]
 
-    for entity in entities:
-        text = _entity_text(entity)
-        raw_label = _entity_type(entity)
-        label = _normalise_label(raw_label)
+    for medication_index, drug in enumerate(medication_entities):
+        next_drug_start = (
+            medication_entities[medication_index + 1]["start"]
+            if medication_index + 1 < len(medication_entities)
+            else len(note)
+        )
 
-        if not text or not label:
-            continue
+        # Associate extracted attributes occurring after this drug
+        # and before the next drug mention.
+        attributes = {}
 
-        if label == "DRUG_NAME":
-            current_medication = {
-                "medication_name": text,
-                "attributes": {},
-                "source_span": {
-                    "start": _entity_start(entity),
-                    "end": _entity_end(entity),
-                },
-                "event_timestamp": None,
-                "timestamp_source": "unknown",
-            }
-
-            medications.append(current_medication)
-            continue
-
-        if label in attribute_labels:
-            if current_medication is None:
-                unassigned_entities.append({
-                    "label": label,
-                    "text": text,
-                    "start": _entity_start(entity),
-                    "end": _entity_end(entity),
+        for entity in entities:
+            if (
+                entity["type"] != "DRUG_NAME"
+                and drug["end"] <= entity["start"] < next_drug_start
+            ):
+                attributes.setdefault(entity["type"], []).append({
+                    "text": entity["text"].strip(),
+                    "score": entity.get("score"),
+                    "start": entity["start"],
+                    "end": entity["end"],
                 })
-                continue
 
-            current_medication["attributes"].setdefault(
-                label, []
-            ).append({
-                "text": text,
-                "score": entity.get("score"),
-                "start": _entity_start(entity),
-                "end": _entity_end(entity),
-            })
+        # Associate the nearest preceding time in the text, if any.
+        preceding_times = [
+            event_time for event_time in event_times
+            if event_time["end"] <= drug["start"]
+        ]
 
-            continue
+        event_timestamp = (
+            preceding_times[-1]["text"]
+            if preceding_times
+            else None
+        )
 
-        unassigned_entities.append({
-            "label": label,
-            "text": text,
-            "start": _entity_start(entity),
-            "end": _entity_end(entity),
+        medications.append({
+            "medication_name": drug["text"].strip(),
+            "attributes": attributes,
+            "source_span": {
+                "start": drug["start"],
+                "end": drug["end"],
+            },
+            "event_timestamp": event_timestamp,
+            "timestamp_source": (
+                "extracted_from_note"
+                if event_timestamp
+                else "unknown"
+            ),
         })
 
+    for entity in entities:
+        if entity["type"] == "PROCEDURE":
+            procedures.append({
+                "procedure_name": entity["text"].strip(),
+                "source_span": {
+                    "start": entity["start"],
+                    "end": entity["end"],
+                },
+            })
+        elif entity["type"] != "DRUG_NAME":
+            unassigned_entities.append({
+                "text": entity["text"].strip(),
+                "type": entity["type"],
+                "score": entity.get("score"),
+                "start": entity["start"],
+                "end": entity["end"],
+            })
+
     return {
-        "record_id": str(uuid4()),
+        "record_id": str(uuid.uuid4()),
         "original_note": note,
-        "record_created_at": datetime.now()
-        .astimezone()
-        .isoformat(timespec="seconds"),
+        "record_created_at": datetime.now().astimezone().isoformat(
+            timespec="seconds"
+        ),
         "medications": medications,
         "unassigned_entities": unassigned_entities,
-        "procedures": [],
+        "procedures": procedures,
         "status": "draft",
         "reviewed_at": None,
         "finalized_at": None,
