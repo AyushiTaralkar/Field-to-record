@@ -1,24 +1,40 @@
+from transformers import pipeline, AutoTokenizer
 
-from transformers import pipeline
+MODEL = "genzeonplatform/healthcare-brain-medication-ner"
 
-MODEL_NAME = "genzeonplatform/healthcare-brain-medication-ner"
+tokenizer = AutoTokenizer.from_pretrained(MODEL)
 
-def load_ner_model():
-    print("Loading medication NER model...")
-    ner = pipeline(
-        "token-classification",
-        model=MODEL_NAME,
-        aggregation_strategy="simple"
+nlp = pipeline(
+    "token-classification",
+    model=MODEL,
+    tokenizer=tokenizer,
+    aggregation_strategy="first",
+)
+
+text = (
+    "Responder reports the patient takes Metformin 500 mg "
+    "tablet by mouth twice daily for diabetes. "
+    "Amoxicillin 500 mg capsule PO three times daily "
+    "for seven days was also reported."
+)
+
+tokens = tokenizer(
+    text,
+    add_special_tokens=True,
+    truncation=False,
+)
+
+print("Original characters:", len(text))
+print("Token count:", len(tokens["input_ids"]))
+print("Original text:", text)
+
+entities = nlp(text)
+
+for ent in entities:
+    print(
+        ent["entity_group"],
+        repr(ent["word"]),
+        ent["start"],
+        ent["end"],
+        round(ent["score"], 3),
     )
-    print("Model loaded successfully!")
-    return ner
-
-
-if __name__ == "__main__":
-    ner = load_ner_model()
-
-    text = "Patient was prescribed 500 mg of paracetamol orally."
-    results = ner(text)
-
-    for entity in results:
-        print(entity)
