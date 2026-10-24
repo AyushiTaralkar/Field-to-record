@@ -1,0 +1,89 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Record Details | Field-to-Record</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+            color: #1f2937;
+            background: #f8fafc;
+        }
+        section {
+            background: white;
+            padding: 20px;
+            margin: 16px 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+        }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+        .muted { color: #64748b; }
+        li { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <a href="/records">← Back to previous records</a>
+    <h1>Record Details</h1>
+
+    <section>
+        <h2>Record information</h2>
+        <p><strong>ID:</strong> {{ record.record_id }}</p>
+        <p><strong>Status:</strong> {{ record.status or "unknown" }}</p>
+        <p><strong>Created:</strong> {{ record.record_created_at or "Not available" }}</p>
+        <p><strong>Reviewed:</strong> {{ record.reviewed_at or "Not reviewed" }}</p>
+        <p><strong>Finalized:</strong> {{ record.finalized_at or "Not finalized" }}</p>
+    </section>
+
+    <section>
+        <h2>Original responder note</h2>
+        <pre>{{ record.original_note or "No original note saved." }}</pre>
+    </section>
+
+    <section>
+        <h2>Medications</h2>
+        {% if record.medications %}
+            {% for medication in record.medications %}
+                <article>
+                    <h3>{{ medication.medication_name }}</h3>
+                    <p>
+                        <strong>Event time:</strong>
+                        {{ medication.event_timestamp or "Not stated" }}
+                    </p>
+                    {% if medication.attributes %}
+                        <strong>Attributes</strong>
+                        <ul>
+                            {% for attribute_type, values in medication.attributes.items() %}
+                                {% for value in values %}
+                                    <li>{{ attribute_type }}: {{ value.text }}</li>
+                                {% endfor %}
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="muted">No attributes recorded.</p>
+                    {% endif %}
+                </article>
+            {% endfor %}
+        {% else %}
+            <p class="muted">No medications recorded.</p>
+        {% endif %}
+    </section>
+
+    <section>
+        <h2>Procedures</h2>
+        {% if record.procedures %}
+            <ul>
+                {% for procedure in record.procedures %}
+                    <li>{{ procedure.procedure_name }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="muted">No procedures recorded.</p>
+        {% endif %}
+    </section>
+</body>
+</html>

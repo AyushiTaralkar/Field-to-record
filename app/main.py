@@ -1,21 +1,44 @@
 
 from datetime import datetime
-
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
-
-from app.database import init_db, save_record, get_record
-from app.audit import init_audit_table, log_event
-from app.structure import structure_record
 import os
 import tempfile
 
-from fastapi import UploadFile, File, HTTPException
+from fastapi import FastAPI, Form, Request, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from app.database import init_db, save_record, get_record, list_records
+from app.audit import init_audit_table, log_event
+from app.structure import structure_record
 from app.speech import transcribe_audio
 
 app = FastAPI(title="Field-to-Record")
 templates = Jinja2Templates(directory="templates")
+
+@app.get("/records", response_class=HTMLResponse)
+def previous_records(request: Request):
+    records = list_records()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="history.html",
+        context={"records": records},
+    )
+
+
+@app.get("/records/{record_id}", response_class=HTMLResponse)
+def view_previous_record(request: Request, record_id: str):
+    record = get_record(record_id)
+
+    if record is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="record_detail.html",
+        context={"record": record},
+    )
+
 
 
 

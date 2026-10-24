@@ -1,0 +1,69 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Previous Records | Field-to-Record</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+            color: #1f2937;
+            background: #f8fafc;
+        }
+        a { color: #2563eb; text-decoration: none; }
+        .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .record {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 18px;
+            margin: 14px 0;
+        }
+        .muted { color: #64748b; font-size: 14px; }
+        .status { font-weight: bold; text-transform: capitalize; }
+        .empty { padding: 28px; background: white; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div class="top">
+        <div>
+            <h1>Previous Records</h1>
+            <p class="muted">Open saved notes and review their current status.</p>
+        </div>
+        <a href="/">+ New record</a>
+    </div>
+
+    {% if records %}
+        {% for record in records %}
+            <article class="record">
+                <h3>
+                    <a href="/records/{{ record.record_id }}">
+                        Record {{ record.record_id }}
+                    </a>
+                </h3>
+                <p>
+                    <strong>Status:</strong>
+                    <span class="status">{{ record.status or "unknown" }}</span>
+                </p>
+                <p class="muted">
+                    Created: {{ record.record_created_at or "Not available" }}
+                </p>
+                {% if record.reviewed_at %}
+                    <p class="muted">Reviewed: {{ record.reviewed_at }}</p>
+                {% endif %}
+                <a href="/records/{{ record.record_id }}">Open record →</a>
+            </article>
+        {% endfor %}
+    {% else %}
+        <div class="empty">
+            <h3>No saved records yet</h3>
+            <p class="muted">Records will appear here after a note is saved.</p>
+            <a href="/">Create your first record</a>
+        </div>
+    {% endif %}
+</body>
+</html>
