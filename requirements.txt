@@ -19,6 +19,7 @@ uvicorn[standard]
 
 # Document generation
 Jinja2
+reportlab
 
 # Testing
 pytest

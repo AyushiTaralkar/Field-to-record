@@ -12,6 +12,21 @@ from app.audit import init_audit_table, log_event
 from app.structure import structure_record
 from app.speech import transcribe_audio
 
+from io import BytesIO
+
+from fastapi.responses import StreamingResponse
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
 app = FastAPI(title="Field-to-Record")
 templates = Jinja2Templates(directory="templates")
 
@@ -257,4 +272,147 @@ async def review_record(request: Request, record_id: str):
         request=request,
         name="review.html",
         context={"record": record, "error": None},
+    )
+
+from xml.sax.saxutils import escape
+
+
+def safe_text(value):
+    """Escape text before placing it inside a PDF paragraph."""
+    if value is None or value == "":
+        return "Not stated"
+    return escape(str(value))
+
+
+@app.get("/records/{record_id}/pdf")
+def export_record_pdf(record_id: str):
+    record = get_record(record_id)
+
+    if record is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    if record.get("status") not in ("reviewed", "finalized"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only reviewed or finalized records can be exported.",
+        )
+
+    buffer = BytesIO()
+
+    pdf = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=2 * cm,
+        leftMargin=2 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+    )
+
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph("Field-to-Record", styles["Title"]))
+    story.append(Paragraph("Clinical Record", styles["Heading2"]))
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("Record Information", styles["Heading2"]))
+
+    info = [
+        ["Record ID", safe_text(record.get("id") or record.get("record_id") or record_id)],
+        ["Status", safe_text(record.get("status"))],
+        ["Created", safe_text(record.get("created_at"))],
+        ["Reviewed", safe_text(record.get("reviewed_at"))],
+        ["Finalized", safe_text(record.get("finalized_at"))],
+    ]
+
+    table = Table(info, colWidths=[4 * cm, 12 * cm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("PADDING", (0, 0), (-1, -1), 7),
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph("Original Responder Note", styles["Heading2"]))
+    story.append(Paragraph(
+        safe_text(record.get("original_note")),
+        styles["BodyText"],
+    ))
+    story.append(Spacer(1, 14))
+
+    story.append(Paragraph("Medications", styles["Heading2"]))
+
+    medications = record.get("medications") or []
+
+    if medications:
+        for med in medications:
+            story.append(Paragraph(
+                safe_text(med.get("name", "Medication")),
+                styles["Heading3"],
+            ))
+
+            story.append(Paragraph(
+                f"Event time: {safe_text(med.get('event_time'))}",
+                styles["BodyText"],
+            ))
+
+            attributes = med.get("attributes") or {}
+
+            if isinstance(attributes, dict):
+                for key, value in attributes.items():
+                    story.append(Paragraph(
+                        f"{safe_text(key)}: {safe_text(value)}",
+                        styles["BodyText"],
+                    ))
+            elif isinstance(attributes, list):
+                for attribute in attributes:
+                    if isinstance(attribute, dict):
+                        key = attribute.get("type", attribute.get("label", "Attribute"))
+                        value = attribute.get("value", "")
+                        story.append(Paragraph(
+                            f"{safe_text(key)}: {safe_text(value)}",
+                            styles["BodyText"],
+                        ))
+                    else:
+                        story.append(Paragraph(
+                            safe_text(attribute), styles["BodyText"]
+                        ))
+
+            story.append(Spacer(1, 8))
+    else:
+        story.append(Paragraph("No medications recorded.", styles["BodyText"]))
+
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Procedures", styles["Heading2"]))
+
+    procedures = record.get("procedures") or []
+
+    if procedures:
+        for procedure in procedures:
+            if isinstance(procedure, dict):
+                name = procedure.get("name", procedure.get("text", "Procedure"))
+                story.append(Paragraph(safe_text(name), styles["BodyText"]))
+            else:
+                story.append(Paragraph(safe_text(procedure), styles["BodyText"]))
+    else:
+        story.append(Paragraph("No procedures recorded.", styles["BodyText"]))
+
+    story.append(Spacer(1, 18))
+    story.append(Paragraph(
+        "Generated by Field-to-Record. This document reflects the saved "
+        "record and is not an independent clinical validation.",
+        styles["Italic"],
+    ))
+
+    pdf.build(story)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="clinical_record_{record_id}.pdf"'
+        },
     )

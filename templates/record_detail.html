@@ -73,6 +73,7 @@
         {% endif %}
     </section>
 
+
     <section>
         <h2>Procedures</h2>
         {% if record.procedures %}
@@ -85,5 +86,16 @@
             <p class="muted">No procedures recorded.</p>
         {% endif %}
     </section>
+
+    {% if record.status in ["reviewed", "finalized"] %}
+        <section>
+            <h2>Export record</h2>
+            <p>
+                <a href="/records/{{ record.record_id }}/pdf">
+                    Download PDF
+                </a>
+            </p>
+        </section>
+    {% endif %}
 </body>
 </html>
