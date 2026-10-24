@@ -1,202 +1,103 @@
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review Clinical Record | Field-to-Record</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 850px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f5f7fa;
-            color: #233446;
-        }
-        .panel {
-            background: white;
-            padding: 24px;
-            border: 1px solid #dce3ea;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-top: 14px;
-            font-weight: bold;
-        }
-        input {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 10px;
-            margin-top: 6px;
-            border: 1px solid #b9c6d3;
-            border-radius: 6px;
-            font: inherit;
-        }
-        input[type="checkbox"] {
-            width: auto;
-            margin-right: 8px;
-        }
-        button, .link {
-            display: inline-block;
-            padding: 12px 18px;
-            margin-top: 16px;
-            background: #23415a;
-            color: white;
-            border: none;
-            border-radius: 7px;
-            cursor: pointer;
-            font: inherit;
-            text-decoration: none;
-        }
-        pre {
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-        }
-        .notice {
-            color: #586b7d;
-            line-height: 1.5;
-        }
-        .error {
-            color: #a32222;
-            font-weight: bold;
-        }
-        .status {
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-    <h1>Review Clinical Record</h1>
+{% extends "base.html" %}
+{% block title %}Review Clinical Record | Field-to-Record{% endblock %}
+{% block page_class %}narrow{% endblock %}
+{% block content %}
+<section class="page-heading">
+    <div class="eyebrow">Human review required</div>
+    <h1>Review clinical record</h1>
+    <p class="subtext">Compare each extracted field with the original note. Correct the record before confirming.</p>
+    <span class="status {{ record.status or 'draft' }}">{{ record.status or "unknown" }}</span>
+</section>
 
-    <div class="panel">
-        <p>
-            <strong>Record ID:</strong>
-            {{ record.record_id }}
-        </p>
-        <p>
-            <strong>Status:</strong>
-            <span class="status">{{ record.status }}</span>
-        </p>
+{% if error %}
+<div class="error" role="alert">{{ error }}</div>
+{% endif %}
 
-        <h2>Original responder note</h2>
-        <pre>{{ record.original_note }}</pre>
-
-        <p class="notice">
-            Compare each extracted field against the original note.
-            Correct errors, and do not infer missing clinical information.
-        </p>
+<section class="card">
+    <h2>Original responder note</h2>
+    <pre>{{ record.original_note or record.note or "No original note saved." }}</pre>
+    <div class="notice">
+        Confirm that the extracted text matches the responder's note. Do not infer missing clinical information.
     </div>
+</section>
 
-    {% if error %}
-    <div class="panel">
-        <p class="error">{{ error }}</p>
-    </div>
+{% if record.status == "draft" %}
+<form action="/review/{{ record.record_id }}" method="post">
+    {% for medication in record.medications %}
+    {% set med_index = loop.index0 %}
+    <section class="card">
+        <div class="eyebrow">Medication {{ loop.index }}</div>
+        <h2>Confirm extracted details</h2>
+
+        <label for="name_{{ med_index }}">Medication name</label>
+        <input id="name_{{ med_index }}" name="name_{{ med_index }}"
+               value="{{ medication.medication_name or medication.name or medication.drug or '' }}"
+               required>
+
+        <label for="strength_{{ med_index }}">Strength</label>
+        <input id="strength_{{ med_index }}" name="strength_{{ med_index }}"
+               value="{{ medication.attributes.get('STRENGTH', [{}])[0].get('text', '') }}">
+
+        <label for="route_{{ med_index }}">Route</label>
+        <input id="route_{{ med_index }}" name="route_{{ med_index }}"
+               value="{{ medication.attributes.get('ROUTE', [{}])[0].get('text', '') }}">
+    </section>
+    {% endfor %}
+
+    {% if not record.medications %}
+    <section class="card">
+        <h2>No medication entities extracted</h2>
+        <p class="subtext">Check the original note and any unassigned entities below.</p>
+    </section>
     {% endif %}
 
-    {% if record.status == "draft" %}
-    <form action="/review/{{ record.record_id }}" method="post">
-        {% for medication in record.medications %}
-        {% set med_index = loop.index0 %}
-
-        <div class="panel">
-            <h2>Medication {{ loop.index }}</h2>
-
-            <label for="name_{{ med_index }}">Medication name</label>
-            <input
-                id="name_{{ med_index }}"
-                name="name_{{ med_index }}"
-                value="{{ medication.medication_name or '' }}"
-                required
-            >
-
-            <label for="strength_{{ med_index }}">Strength</label>
-            <input
-                id="strength_{{ med_index }}"
-                name="strength_{{ med_index }}"
-                value="{{ medication.attributes.get('STRENGTH', [{}])[0].get('text', '') }}"
-            >
-
-            <label for="route_{{ med_index }}">Route</label>
-            <input
-                id="route_{{ med_index }}"
-                name="route_{{ med_index }}"
-                value="{{ medication.attributes.get('ROUTE', [{}])[0].get('text', '') }}"
-            >
-        </div>
-        {% endfor %}
-
-        <div class="panel">
-            <h2>Unassigned entities</h2>
-            {% if record.unassigned_entities %}
-                <ul>
-                {% for entity in record.unassigned_entities %}
-                    <li>
-                        {{ entity.get('label', 'Entity') }}:
-                        {{ entity.get('text', '') }}
-                    </li>
-                {% endfor %}
-                </ul>
-            {% else %}
-                <p>None</p>
-            {% endif %}
-
-            <p class="notice">
-                These entities have not been assigned to a medication.
-                Check them against the original note.
-            </p>
-        </div>
-
-        <div class="panel">
-            <label>
-                <input
-                    type="checkbox"
-                    name="confirmed"
-                    value="yes"
-                    required
-                >
-                I have reviewed and confirmed the displayed fields
-                against the original responder note.
-            </label>
-
-            <button type="submit">Confirm and save review</button>
-        </div>
-    </form>
-
-    {% else %}
-    <div class="panel">
-        <h2>Reviewed medication details</h2>
-
-        {% if record.medications %}
-            {% for medication in record.medications %}
-            <div>
-                <h3>Medication {{ loop.index }}</h3>
-                <p>
-                    <strong>Name:</strong>
-                    {{ medication.medication_name }}
-                </p>
-
-                {% for attr_type in ['STRENGTH', 'ROUTE'] %}
-                    {% for item in medication.attributes.get(attr_type, []) %}
-                    <p>
-                        <strong>{{ attr_type.replace('_', ' ').title() }}:</strong>
-                        {{ item.get('text', '') }}
-                    </p>
-                    {% endfor %}
-                {% endfor %}
-            </div>
+    <section class="card">
+        <h2>Unassigned entities</h2>
+        {% if record.unassigned_entities %}
+        <ul>
+            {% for entity in record.unassigned_entities %}
+            <li><strong>{{ entity.get('label', 'Entity') }}:</strong> {{ entity.get('text', '') }}</li>
             {% endfor %}
+        </ul>
         {% else %}
-            <p>No medication entities were extracted.</p>
+        <p class="muted">No unassigned entities.</p>
         {% endif %}
+    </section>
 
-        <p class="notice">
-            This record is reviewed, not finalized or exported.
-        </p>
-        <a class="link" href="/">Create another draft</a>
-    </div>
+    <section class="card">
+        <label class="check-row">
+            <input type="checkbox" name="confirmed" value="yes" required>
+            <span>I have reviewed the displayed fields against the original responder note and corrected any errors.</span>
+        </label>
+        <div class="actions">
+            <button class="button primary" type="submit">Confirm and save review →</button>
+            <a class="button" href="/">Cancel</a>
+        </div>
+    </section>
+</form>
+{% else %}
+<section class="card">
+    <h2>Reviewed medication details</h2>
+    {% if record.medications %}
+        {% for medication in record.medications %}
+        <article class="record-row">
+            <h3>{{ medication.medication_name or medication.name or medication.drug or "Medication" }}</h3>
+            {% for attr_type in ['STRENGTH', 'ROUTE'] %}
+                {% for item in medication.attributes.get(attr_type, []) %}
+                <p><strong>{{ attr_type.replace('_', ' ').title() }}:</strong> {{ item.get('text', '') }}</p>
+                {% endfor %}
+            {% endfor %}
+        </article>
+        {% endfor %}
+    {% else %}
+        <p class="muted">No medication entities were extracted.</p>
     {% endif %}
-</body>
-</html>
+    <p class="notice">This record is reviewed. It has not been finalized unless its status explicitly says finalized.</p>
+    <div class="actions">
+        <a class="button primary" href="/records/{{ record.record_id }}">View saved record</a>
+        <a class="button" href="/">Create another draft</a>
+    </div>
+</section>
+{% endif %}
+{% endblock %}
