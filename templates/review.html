@@ -1,0 +1,109 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Clinical Record</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 850px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f7fa;
+            color: #233446;
+        }
+        .panel {
+            background: white;
+            padding: 24px;
+            border: 1px solid #dce3ea;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-top: 14px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            margin-top: 6px;
+            border: 1px solid #b9c6d3;
+            border-radius: 6px;
+            font: inherit;
+        }
+        button {
+            padding: 12px 18px;
+            background: #23415a;
+            color: white;
+            border: none;
+            border-radius: 7px;
+            cursor: pointer;
+            margin-top: 16px;
+        }
+        pre {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+        .notice { color: #586b7d; }
+    </style>
+</head>
+<body>
+    <h1>Review Clinical Record</h1>
+
+    <div class="panel">
+        <p><strong>Record ID:</strong> {{ record.record_id }}</p>
+        <p><strong>Status:</strong> {{ record.status }}</p>
+
+        <h2>Original responder note</h2>
+        <pre>{{ record.original_note }}</pre>
+
+        <p class="notice">
+            Compare every field with the original note.
+            Do not infer missing clinical information.
+        </p>
+    </div>
+
+    <form action="/review/{{ record.record_id }}" method="post">
+        {% for medication in record.medications %}
+        <div class="panel">
+            <h2>Medication {{ loop.index }}</h2>
+
+            <label for="name_{{ loop.index0 }}">Medication name</label>
+            <input
+                id="name_{{ loop.index0 }}"
+                name="name_{{ loop.index0 }}"
+                value="{{ medication.medication_name or '' }}"
+                required
+            >
+
+            {% for attr_type, items in medication.attributes.items() %}
+                {% for item in items %}
+                <label for="attr_{{ loop.index0 }}_{{ loop.index }}_{{ loop.index0 }}">
+                    {{ attr_type.replace('_', ' ').title() }}
+                </label>
+                <input
+                    name="attr_{{ loop.parent.index0 if loop.parent is defined else 0 }}_{{ attr_type }}"
+                    value="{{ item.text }}"
+                >
+                {% endfor %}
+            {% endfor %}
+        </div>
+        {% endfor %}
+
+        <div class="panel">
+            <h2>Unassigned entities</h2>
+            <pre>{{ record.unassigned_entities }}</pre>
+            <p class="notice">
+                These are displayed for review; they are not automatically
+                assigned to a medication.
+            </p>
+        </div>
+
+        <button type="submit">Confirm and save review</button>
+    </form>
+</body>
+</html>
