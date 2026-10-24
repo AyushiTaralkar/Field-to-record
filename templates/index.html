@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Field-to-Record</title>
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -14,6 +15,7 @@
             background: #f5f7fa;
             color: #233446;
         }
+
         .panel {
             background: white;
             padding: 24px;
@@ -21,6 +23,7 @@
             border-radius: 10px;
             margin-bottom: 20px;
         }
+
         textarea {
             width: 100%;
             min-height: 180px;
@@ -31,9 +34,10 @@
             font: inherit;
             resize: vertical;
         }
+
         button {
             padding: 12px 18px;
-            margin-top: 16px;
+            margin: 8px 8px 0 0;
             background: #23415a;
             color: white;
             border: none;
@@ -41,42 +45,256 @@
             cursor: pointer;
             font: inherit;
         }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
         .error {
             color: #a32222;
             font-weight: bold;
         }
+
         .notice {
             color: #586b7d;
             line-height: 1.5;
         }
+
+        .status {
+            margin-top: 12px;
+            line-height: 1.5;
+        }
+
+        .divider {
+            border: 0;
+            border-top: 1px solid #dce3ea;
+            margin: 24px 0;
+        }
     </style>
 </head>
+
 <body>
     <h1>Field-to-Record</h1>
     <p>Voice-to-Structured Clinical Note Generator</p>
 
     <div class="panel">
         <h2>Enter responder note</h2>
+
         <p class="notice">
-            Enter a synthetic or appropriately de-identified note.
-            Extracted information must be checked by a clinician.
+            Use synthetic or appropriately de-identified notes.
+            Always check the transcript and extracted information.
         </p>
 
         {% if error %}
         <p class="error">{{ error }}</p>
         {% endif %}
 
-        <form action="/extract" method="post">
+        <form action="/extract" method="post" id="noteForm">
             <label for="note"><strong>Responder note</strong></label>
+
             <textarea
                 id="note"
                 name="note"
-                placeholder="Enter the responder's note here..."
+                placeholder="Type a responder note or transcribe a recording..."
                 required
             >{{ note }}</textarea>
 
-            <button type="submit">Extract and review</button>
+            <p class="notice">
+                If using voice input, correct any transcription mistakes
+                in the text above before generating the draft.
+            </p>
+
+            <button type="submit" id="generateButton">
+                Generate Draft for Review
+            </button>
         </form>
+
+        <hr class="divider">
+
+        <section>
+            <h2>Voice Input</h2>
+
+            <p class="notice">
+                Record directly through your browser. Audio is transcribed
+                by your local faster-whisper model.
+            </p>
+
+            <button type="button" id="startRecording">
+                Start Recording
+            </button>
+
+            <button type="button" id="stopRecording" disabled>
+                Stop Recording &amp; Transcribe
+            </button>
+
+            <p id="recordingStatus" class="status" role="status"
+               aria-live="polite">
+                Ready to record.
+            </p>
+        </section>
     </div>
+
+    <script>
+        const noteField = document.getElementById("note");
+        const startButton = document.getElementById("startRecording");
+        const stopButton = document.getElementById("stopRecording");
+        const statusText = document.getElementById("recordingStatus");
+        const generateButton = document.getElementById("generateButton");
+
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let audioStream = null;
+        let recordingMimeType = "";
+
+        startButton.addEventListener("click", async () => {
+            try {
+                if (!navigator.mediaDevices?.getUserMedia ||
+                    typeof MediaRecorder === "undefined") {
+                    throw new Error(
+                        "Your browser does not support microphone recording."
+                    );
+                }
+
+                audioStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true
+                });
+
+                audioChunks = [];
+
+                const supportedTypes = [
+                    "audio/webm;codecs=opus",
+                    "audio/webm",
+                    "audio/mp4"
+                ];
+
+                recordingMimeType = supportedTypes.find(
+                    type => MediaRecorder.isTypeSupported(type)
+                ) || "";
+
+                mediaRecorder = recordingMimeType
+                    ? new MediaRecorder(audioStream, {
+                        mimeType: recordingMimeType
+                    })
+                    : new MediaRecorder(audioStream);
+
+                recordingMimeType = mediaRecorder.mimeType;
+
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data && event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onerror = () => {
+                    statusText.textContent =
+                        "Recording failed. Please try again.";
+                    cleanupRecording();
+                };
+
+                mediaRecorder.onstop = transcribeRecording;
+
+                mediaRecorder.start();
+
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                generateButton.disabled = true;
+
+                statusText.textContent =
+                    "Recording... Speak clearly, then stop when finished.";
+
+            } catch (error) {
+                statusText.textContent =
+                    error.message ||
+                    "Could not access the microphone. Check browser permissions.";
+
+                cleanupRecording();
+            }
+        });
+
+        stopButton.addEventListener("click", () => {
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                stopButton.disabled = true;
+                statusText.textContent = "Preparing audio...";
+
+                mediaRecorder.stop();
+            }
+        });
+
+        async function transcribeRecording() {
+            try {
+                const audioBlob = new Blob(audioChunks, {
+                    type: recordingMimeType || "application/octet-stream"
+                });
+
+                if (!audioBlob.size) {
+                    throw new Error(
+                        "No audio was recorded. Please try again."
+                    );
+                }
+
+                const formData = new FormData();
+
+                const extension = recordingMimeType.includes("mp4")
+                    ? "mp4"
+                    : recordingMimeType.includes("webm")
+                        ? "webm"
+                        : "audio";
+
+                formData.append(
+                    "file",
+                    audioBlob,
+                    `recording.${extension}`
+                );
+
+                statusText.textContent =
+                    "Transcribing locally. This may take a little while...";
+
+                const response = await fetch("/transcribe", {
+                    method: "POST",
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        result.detail || "Transcription failed."
+                    );
+                }
+
+                if (!result.transcript ||
+                    !result.transcript.trim()) {
+                    throw new Error(
+                        "No speech detected. Please record again."
+                    );
+                }
+
+                noteField.value = result.transcript.trim();
+
+                statusText.textContent =
+                    "Transcription complete. Correct the text above before generating a draft.";
+
+                noteField.focus();
+
+            } catch (error) {
+                statusText.textContent = error.message;
+            } finally {
+                cleanupRecording();
+            }
+        }
+
+        function cleanupRecording() {
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+            }
+
+            audioStream = null;
+            mediaRecorder = null;
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            generateButton.disabled = false;
+        }
+    </script>
 </body>
 </html>

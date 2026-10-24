@@ -11,11 +11,11 @@ pydantic
 # Audio input and offline speech-to-text
 faster-whisper
 soundfile
+python-multipart
 
 # API and application layer
 fastapi
 uvicorn[standard]
-python-multipart
 
 # Document generation
 Jinja2

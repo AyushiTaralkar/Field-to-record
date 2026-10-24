@@ -8,10 +8,66 @@ from fastapi.templating import Jinja2Templates
 from app.database import init_db, save_record, get_record
 from app.audit import init_audit_table, log_event
 from app.structure import structure_record
+import os
+import tempfile
 
+from fastapi import UploadFile, File, HTTPException
+from app.speech import transcribe_audio
 
 app = FastAPI(title="Field-to-Record")
 templates = Jinja2Templates(directory="templates")
+
+
+
+@app.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    allowed_types = {
+        "audio/webm",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/ogg",
+    }
+
+    content_type = (file.content_type or "").lower()
+
+    if not content_type.startswith("audio/"):
+      raise HTTPException(
+        status_code=400,
+        detail=f"Unsupported audio format: {content_type or 'unknown'}"
+    )
+    temp_path = None
+
+    try:
+        suffix = ".webm"
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=suffix
+        ) as temp:
+            temp_path = temp.name
+            content = await file.read()
+            temp.write(content)
+
+        if not content:
+            raise HTTPException(
+                status_code=400,
+                detail="The audio recording is empty."
+            )
+
+        transcript = transcribe_audio(temp_path)
+        return {"transcript": transcript}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Transcription failed: {exc}"
+        )
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+        await file.close()
 
 
 @app.on_event("startup")
